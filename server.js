@@ -18,7 +18,7 @@ app.use((req, res, next) => {
 });
 
 app.get("/", (_req, res) => {
-  res.send("OK - sell-medinet-backend");
+  res.send("OK - sell-medinet-backend v2");
 });
 
 app.post("/medinet/import", (req, res) => {
