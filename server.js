@@ -22,7 +22,15 @@ app.get("/", (_req, res) => {
 });
 
 app.post("/medinet/import", (req, res) => {
-  const apiKey = process.env.API_KEY;
+  // Logs SIEMPRE (aunque falle auth)
+  console.log("=== IMPORT HIT ===", new Date().toISOString());
+  console.log("ORIGIN:", req.headers.origin || "no-origin");
+  console.log("REFERER:", req.headers.referer || "no-referer");
+  console.log("CONTENT-TYPE:", req.headers["content-type"] || "none");
+  console.log("HAS X-API-KEY:", req.headers["x-api-key"] ? "YES" : "NO");
+  console.log("BODY:", req.body);
+
+  const apiKey = (process.env.API_KEY || "").trim();
 
   if (!apiKey) {
     console.log("ERROR: API_KEY no configurada");
@@ -35,17 +43,19 @@ app.post("/medinet/import", (req, res) => {
   const requestApiKey = (req.header("X-API-Key") || "").trim();
   if (requestApiKey !== apiKey) {
     console.log("ERROR: API key inválida");
-    return res.status(401).json({ status: "error", message: "API key inválida" });
+    return res.status(401).json({
+      status: "error",
+      message: "API key inválida",
+    });
   }
 
-  console.log("POST /medinet/import from", req.headers.origin || "no-origin");
+  // Log de headers resumidos (sin exponer el API key)
   console.log("HEADERS:", {
     origin: req.headers.origin,
     referer: req.headers.referer,
     "content-type": req.headers["content-type"],
     "x-api-key": req.headers["x-api-key"] ? "PRESENTE" : "AUSENTE",
   });
-  console.log("BODY:", req.body);
 
   const response = {
     status: "ok",
