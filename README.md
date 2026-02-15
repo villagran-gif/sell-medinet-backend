@@ -1,11 +1,12 @@
 # sell-medinet-backend
 
-Backend mínimo en Node.js + Express para conectar Zendesk Sell con Medinet mediante un endpoint protegido por API key.
+Backend mínimo en Node.js + Express para conectar Zendesk Sell con Medinet mediante endpoints protegidos por API key.
 
 ## Qué hace este servicio
 
 - Expone `GET /` para validar que el backend está activo.
 - Expone `POST /medinet/import` para recibir datos JSON.
+- Expone `POST /medinet/search` para búsquedas por identificador con tipo de documento (`DNI` o `RUN`) y normalización del valor.
 - Valida el header `X-API-Key` contra la variable de entorno `API_KEY`.
 
 ## Endpoints
@@ -24,27 +25,29 @@ OK - sell-medinet-backend
 
 Respuestas posibles:
 
-- `500` si falta `API_KEY` en el entorno:
+- `500` si falta `API_KEY` en el entorno.
+- `401` si `X-API-Key` no coincide.
+- `200` si todo está correcto (devuelve el body recibido).
 
-```json
-{ "status": "error", "message": "Backend sin API_KEY configurada en Render (Environment)." }
-```
+### `POST /medinet/search`
 
-- `401` si `X-API-Key` no coincide:
+- Requiere header: `X-API-Key: <API_KEY>`
+- Requiere body JSON con:
+  - `identifierType`: `DNI` o `RUN`
+  - `identifierValue`: valor ingresado por usuario
 
-```json
-{ "status": "error", "message": "API key inválida" }
-```
+Normalización aplicada:
 
-- `200` si todo está correcto:
+- `DNI`: se envía solo dígitos.
+- `RUN`: se quitan puntos, se fuerza `K` mayúscula y se conserva guion si viene informado.
 
-```json
-{
-  "status": "ok",
-  "message": "Conectado ✅ (backend Render)",
-  "received": { "...": "body recibido" }
-}
-```
+Respuestas posibles:
+
+- `400` si `identifierType` no es válido.
+- `400` si falta `identifierValue`.
+- `500` si falta `API_KEY` en el entorno.
+- `401` si `X-API-Key` no coincide.
+- `200` si todo está correcto (incluye `search.identifierType` y `search.identifierValue` normalizados).
 
 ## Configuración
 
@@ -67,13 +70,22 @@ export PORT=3000
 npm start
 ```
 
-## Ejemplo `curl`
+## Ejemplo `curl` - búsqueda DNI
 
 ```bash
-curl -X POST http://localhost:3000/medinet/import \
+curl -X POST http://localhost:3000/medinet/search \
   -H "Content-Type: application/json" \
   -H "X-API-Key: tu_api_key" \
-  -d '{"contacto":"Juan Pérez","telefono":"555-1234"}'
+  -d '{"identifierType":"DNI","identifierValue":"12.345.678"}'
+```
+
+## Ejemplo `curl` - búsqueda RUN
+
+```bash
+curl -X POST http://localhost:3000/medinet/search \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: tu_api_key" \
+  -d '{"identifierType":"RUN","identifierValue":"12.345.678-k"}'
 ```
 
 ## Deploy en Render
