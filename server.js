@@ -1,15 +1,32 @@
 import express from "express";
+import { randomUUID } from "crypto";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const IDENTIFIER_TYPES = {
-  DNI: "DNI",
-  RUN: "RUN",
-};
+const IDENTIFIER_TYPES = { DNI: "DNI", RUN: "RUN" };
 
 app.use(express.json({ limit: "1mb" }));
 
+// ======================
+// In-memory store con TTL
+// ======================
+const TTL_MINUTES = Number(process.env.TTL_MINUTES || 60);
+const TTL_MS = Math.max(1, TTL_MINUTES) * 60 * 1000;
+
+const store = new Map(); // key -> { payload, expiresAt }
+
+function cleanupStore() {
+  const now = Date.now();
+  for (const [k, v] of store.entries()) {
+    if (!v || v.expiresAt <= now) store.delete(k);
+  }
+}
+setInterval(cleanupStore, 60 * 1000).unref();
+
+// ======================
+// Helpers RUN / DNI (tu código original intacto)
+// ======================
 const normalizeDni = (value = "") => value.replace(/\D/g, "");
 
 const computeRunVerifier = (digits) => {
@@ -22,15 +39,8 @@ const computeRunVerifier = (digits) => {
   }
 
   const remainder = 11 - (sum % 11);
-
-  if (remainder === 11) {
-    return "0";
-  }
-
-  if (remainder === 10) {
-    return "K";
-  }
-
+  if (remainder === 11) return "0";
+  if (remainder === 10) return "K";
   return String(remainder);
 };
 
@@ -38,33 +48,21 @@ const normalizeAndValidateRun = (value = "") => {
   const normalizedInput = String(value).toUpperCase().trim();
   const compactValue = normalizedInput.replace(/[.\s-]+/g, "");
 
-  if (!compactValue) {
-    return { isValid: false, error: "RUN vacío" };
-  }
+  if (!compactValue) return { isValid: false, error: "RUN vacío" };
 
   if (!/^\d{1,8}[0-9K]$/.test(compactValue)) {
-    return {
-      isValid: false,
-      error: "RUN inválido. Usa un RUN chileno válido con DV (0-9 o K)",
-    };
+    return { isValid: false, error: "RUN inválido. Usa un RUN chileno válido con DV (0-9 o K)" };
   }
 
   const body = compactValue.slice(0, -1);
   const verifier = compactValue.slice(-1);
-
   const expectedVerifier = computeRunVerifier(body);
 
   if (verifier !== expectedVerifier) {
-    return {
-      isValid: false,
-      error: "RUN inválido. Dígito verificador incorrecto",
-    };
+    return { isValid: false, error: "RUN inválido. Dígito verificador incorrecto" };
   }
 
-  return {
-    isValid: true,
-    normalized: `${body}-${verifier}`,
-  };
+  return { isValid: true, normalized: `${body}-${verifier}` };
 };
 
 const formatRunWithDots = (normalizedRun = "") => {
@@ -85,54 +83,91 @@ const validateApiKey = (req, res) => {
   }
 
   const requestApiKey = req.header("X-API-Key");
-
   if (requestApiKey !== apiKey) {
-    res.status(401).json({
-      status: "error",
-      message: "API key inválida",
-    });
+    res.status(401).json({ status: "error", message: "API key inválida" });
     return false;
   }
-
   return true;
 };
 
-app.get("/", (_req, res) => {
-  res.send("OK - sell-medinet-backend");
+// ======================
+// CORS solo para Medinet (GET payload)
+// ======================
+const MEDINET_ORIGIN = "https://clinyco.medinetapp.com";
+
+function setMedinetCors(res) {
+  res.setHeader("Access-Control-Allow-Origin", MEDINET_ORIGIN);
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+app.options("/medinet/payload/:key", (_req, res) => {
+  setMedinetCors(res);
+  return res.status(204).send("");
 });
 
+// ======================
+// Routes
+// ======================
+app.get("/", (_req, res) => res.send("OK - sell-medinet-backend"));
+
 app.post("/medinet/import", (req, res) => {
-  if (!validateApiKey(req, res)) {
-    return;
-  }
+  if (!validateApiKey(req, res)) return;
+
+  const payload = req.body || {};
+  const key = `mf_${randomUUID()}`;
+
+  store.set(key, {
+    payload,
+    expiresAt: Date.now() + TTL_MS,
+  });
+
+  const baseMedinetNew =
+    String(process.env.MEDINET_NEW_URL || "https://clinyco.medinetapp.com/pacientes/nuevo/")
+      .trim()
+      .replace(/\/?$/, "/"); // asegura trailing /
+
+  const download_url = `${baseMedinetNew}?mf_key=${encodeURIComponent(key)}`;
 
   return res.status(200).json({
     status: "ok",
-    message: "Conectado ✅ (backend Render)",
-    received: req.body,
+    message: "Listo ✅ (payload guardado)",
+    key,
+    download_url,
   });
 });
 
-app.post("/medinet/search", (req, res) => {
-  if (!validateApiKey(req, res)) {
-    return;
+app.get("/medinet/payload/:key", (req, res) => {
+  setMedinetCors(res);
+
+  const key = String(req.params.key || "").trim();
+  if (!key) return res.status(400).json({ status: "error", message: "key requerido" });
+
+  const entry = store.get(key);
+  if (!entry) return res.status(404).json({ status: "error", message: "key no encontrada/expirada" });
+
+  if (entry.expiresAt <= Date.now()) {
+    store.delete(key);
+    return res.status(404).json({ status: "error", message: "key expirada" });
   }
+
+  return res.status(200).json(entry.payload);
+});
+
+// Tu endpoint existente, intacto
+app.post("/medinet/search", (req, res) => {
+  if (!validateApiKey(req, res)) return;
 
   const identifierType = String(req.body?.identifierType || "").toUpperCase();
   const identifierValue = String(req.body?.identifierValue || "");
 
   if (!Object.values(IDENTIFIER_TYPES).includes(identifierType)) {
-    return res.status(400).json({
-      status: "error",
-      message: "identifierType inválido. Usa DNI o RUN",
-    });
+    return res.status(400).json({ status: "error", message: "identifierType inválido. Usa DNI o RUN" });
   }
 
   if (!identifierValue.trim()) {
-    return res.status(400).json({
-      status: "error",
-      message: "identifierValue es requerido",
-    });
+    return res.status(400).json({ status: "error", message: "identifierValue es requerido" });
   }
 
   let normalizedIdentifierValue;
@@ -140,27 +175,17 @@ app.post("/medinet/search", (req, res) => {
 
   if (identifierType === IDENTIFIER_TYPES.DNI) {
     normalizedIdentifierValue = normalizeDni(identifierValue);
-
     if (!normalizedIdentifierValue) {
-      return res.status(400).json({
-        status: "error",
-        message: "DNI inválido. Debe contener solo dígitos",
-      });
+      return res.status(400).json({ status: "error", message: "DNI inválido. Debe contener solo dígitos" });
     }
-
     responseIdentifierValue = normalizedIdentifierValue;
   }
 
   if (identifierType === IDENTIFIER_TYPES.RUN) {
     const runResult = normalizeAndValidateRun(identifierValue);
-
     if (!runResult.isValid) {
-      return res.status(400).json({
-        status: "error",
-        message: runResult.error,
-      });
+      return res.status(400).json({ status: "error", message: runResult.error });
     }
-
     normalizedIdentifierValue = runResult.normalized;
     responseIdentifierValue = formatRunWithDots(normalizedIdentifierValue);
   }
@@ -182,15 +207,9 @@ app.post("/medinet/search", (req, res) => {
 
 app.use((error, _req, res, next) => {
   if (error instanceof SyntaxError && "body" in error) {
-    return res.status(400).json({
-      status: "error",
-      message: "JSON inválido en el body",
-    });
+    return res.status(400).json({ status: "error", message: "JSON inválido en el body" });
   }
-
   return next(error);
 });
 
-app.listen(PORT, () => {
-  console.log(`Listening on ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Listening on ${PORT}`));
