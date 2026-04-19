@@ -212,4 +212,38 @@ app.use((error, _req, res, next) => {
   return next(error);
 });
 
-app.listen(PORT, () => console.log(`Listening on ${PORT}`));
+const server = app.listen(PORT, () => console.log(`Listening on ${PORT}`));
+
+// ======================
+// Graceful shutdown
+// ======================
+// Render envía SIGTERM en cada deploy/reinicio. Sin manejo explícito el proceso
+// muere de golpe y corta conexiones HTTP en vuelo. Aquí cerramos el listener,
+// dejamos que las requests activas terminen, y luego salimos. Máximo 25s
+// (Render hace SIGKILL a los 30s).
+const SHUTDOWN_TIMEOUT_MS = 25_000;
+let shuttingDown = false;
+
+function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[shutdown] ${signal} recibido, cerrando servidor...`);
+
+  const forceExit = setTimeout(() => {
+    console.error("[shutdown] timeout alcanzado, forzando salida");
+    process.exit(1);
+  }, SHUTDOWN_TIMEOUT_MS);
+  forceExit.unref();
+
+  server.close((err) => {
+    if (err) {
+      console.error("[shutdown] error cerrando HTTP:", err);
+      process.exit(1);
+    }
+    console.log("[shutdown] HTTP cerrado, saliendo limpio");
+    process.exit(0);
+  });
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
