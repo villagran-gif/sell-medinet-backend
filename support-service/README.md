@@ -86,6 +86,40 @@ npm run migrate:support
 SUPPORT_ENABLED=true SUPPORT_AUTO_MIGRATE=true npm start
 ```
 
+## Backfill desde Zendesk
+
+Script que lee Zendesk Support API y puebla `support.*`. Idempotente
+(upserts por id). Zendesk IDs se usan como PK local para que el espejo sea
+true 1:1 — al final se resetean los sequences para evitar colisiones.
+
+**Scope por default**: tickets con status `<solved` + sus requesters,
+assignees y submitters + audits + events.
+
+### Env vars
+
+| Variable              | Notas                                   |
+|-----------------------|-----------------------------------------|
+| `ZENDESK_SUBDOMAIN`   | Ej: `clinyco` si la URL es `clinyco.zendesk.com` |
+| `ZENDESK_EMAIL`       | Email del agente que genera el token    |
+| `ZENDESK_API_TOKEN`   | Zendesk Admin → APIs → token read-only  |
+
+### Uso
+
+```bash
+# Test sin escribir (verifica credenciales + conteos):
+node support-service/scripts/backfill.js --dry-run --limit=5 --verbose
+
+# Corrida real:
+npm run backfill:support
+
+# Con límite (para una primera pasada corta):
+node support-service/scripts/backfill.js --limit=20 --verbose
+```
+
+Correr desde Render Shell del servicio `sell-medinet-backend` para aprovechar
+las env vars ya configuradas. También corre las migraciones si aún no están
+aplicadas (excepto en `--dry-run`).
+
 ## Cómo se monta
 
 `server.js` (1 sola línea condicional):

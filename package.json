@@ -9,7 +9,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "migrate:support": "node support-service/migrations/cli.js"
+    "migrate:support": "node support-service/migrations/cli.js",
+    "backfill:support": "node support-service/scripts/backfill.js"
   },
   "dependencies": {
     "express": "^4.19.2",
