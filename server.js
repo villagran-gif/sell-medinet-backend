@@ -1,5 +1,6 @@
 import express from "express";
 import { randomUUID } from "crypto";
+import { createSupportRouter } from "./support-service/index.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -7,6 +8,23 @@ const PORT = process.env.PORT || 3000;
 const IDENTIFIER_TYPES = { DNI: "DNI", RUN: "RUN" };
 
 app.use(express.json({ limit: "1mb" }));
+
+// ======================
+// support-service (opt-in vía SUPPORT_ENABLED=true)
+// Reemplazo incremental de Zendesk Support. Mientras esté apagado, el módulo
+// no toca DB ni corre migraciones. Ver support-service/README.md.
+// ======================
+if (process.env.SUPPORT_ENABLED === "true") {
+  app.use(
+    "/support",
+    createSupportRouter({
+      autoMigrate: process.env.SUPPORT_AUTO_MIGRATE !== "false",
+    })
+  );
+  console.log("[support-service] mounted at /support");
+} else {
+  console.log("[support-service] disabled (set SUPPORT_ENABLED=true to enable)");
+}
 
 // ======================
 // In-memory store con TTL
