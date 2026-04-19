@@ -26,18 +26,40 @@ router Express en `server.js` — **opt-in vía `SUPPORT_ENABLED=true`**.
 
 ## Endpoints (espejo Zendesk)
 
-Mount en `/support`. Rutas internas en `/api/v2/*`.
+Mount en `/support`. Rutas internas en `/api/v2/*`. Sufijo `.json` opcional
+(stripeado por middleware antes del routing — `/users/1.json` ≡ `/users/1`).
 
-| Método | Ruta                                     | Auth          |
-|--------|------------------------------------------|---------------|
-| GET    | `/support/health`                        | sin auth      |
-| GET    | `/support/api/v2/users/:id`              | `X-API-Key`   |
-| PUT    | `/support/api/v2/users/:id`              | `X-API-Key`   |
-| GET    | `/support/api/v2/users/:id/identities`   | `X-API-Key`   |
-| POST   | `/support/api/v2/users/:id/identities`   | `X-API-Key`   |
+| Método | Ruta                                       | Auth          |
+|--------|--------------------------------------------|---------------|
+| GET    | `/support/health`                          | sin auth      |
+| GET    | `/support/api/v2/users/search?query=…`     | `X-API-Key`   |
+| GET    | `/support/api/v2/users/:id`                | `X-API-Key`   |
+| PUT    | `/support/api/v2/users/:id`                | `X-API-Key`   |
+| GET    | `/support/api/v2/users/:id/identities`     | `X-API-Key`   |
+| POST   | `/support/api/v2/users/:id/identities`     | `X-API-Key`   |
+| POST   | `/support/api/v2/tickets`                  | `X-API-Key`   |
+| GET    | `/support/api/v2/tickets/:id`              | `X-API-Key`   |
+| PUT    | `/support/api/v2/tickets/:id`              | `X-API-Key`   |
+| GET    | `/support/api/v2/tickets/:id/audits`       | `X-API-Key`   |
+| GET    | `/support/api/v2/tickets/:id/comments`     | `X-API-Key`   |
+| GET    | `/support/api/v2/search?query=…`           | `X-API-Key`   |
 
-Próximas (PRs siguientes): `tickets`, `tickets/:id/audits`,
-`tickets/:id/comments`, `users/search`, `search.json`.
+### DSL de query (Zendesk)
+
+`?query=` acepta tokens `key:value` y términos libres:
+
+- `email:foo@bar.com` — match exacto (case-insensitive)
+- `name:"John Doe"` — substring (ILIKE), valores con espacios entre comillas
+- `phone:+56...`
+- `external_id:abc123`
+- `type:user` o `type:ticket` (en `/search` global)
+- `status:open status:pending` — múltiples valores → IN (...)
+- `tags:urgent` (tickets)
+- `requester_id:42`, `assignee_id:7`
+- Términos sueltos → substring sobre subject/description (tickets) o
+  email/name/phone (users)
+
+Listas pagineadas a 100 (sin cursor todavía).
 
 ## Esquema Postgres
 
@@ -81,7 +103,7 @@ if (process.env.SUPPORT_ENABLED === "true") {
 ```
 support-service/
 ├── README.md
-├── index.js                # createSupportRouter()
+├── index.js                # createSupportRouter() + .json strip middleware
 ├── db.js                   # pg.Pool lazy
 ├── migrations/
 │   ├── 001-schema.sql
@@ -90,19 +112,24 @@ support-service/
 ├── lib/
 │   ├── auth.js             # X-API-Key middleware
 │   ├── errors.js           # HttpError, asyncHandler, errorHandler
+│   ├── query.js            # parser DSL Zendesk (key:value + términos)
+│   ├── search-db.js        # queries de búsqueda users/tickets
+│   ├── tickets-db.js       # tx ticket+audit+comment
 │   └── zendesk.js          # mapeos row → JSON Zendesk
 └── routes/
     ├── health.js
-    └── users.js
+    ├── users.js            # GET search, CRUD :id, identities
+    ├── tickets.js          # POST, GET/PUT :id, GET :id/audits, :id/comments
+    └── search.js           # /api/v2/search (mixto users+tickets)
 ```
 
 ## Plan general (estado)
 
 | Paso | Descripción                                | Estado |
 |------|--------------------------------------------|--------|
-| 1    | Schema + migrations runner + auth + users  | ✅ este PR |
-| 2    | Tickets, audits, comments                  | pendiente |
-| 3    | Search (users, search.json)                | pendiente |
+| 1    | Schema + migrations runner + auth + users  | ✅ |
+| 2    | Tickets, audits, comments                  | ✅ |
+| 3    | Search (users, search global) + .json strip | ✅ |
 | 4    | Cliente HTTP en `clinyco_ai` con flag      | pendiente |
 | 5    | Backfill desde Zendesk                     | pendiente |
 | 6    | Mirror mode: dual-write + diff log         | pendiente |

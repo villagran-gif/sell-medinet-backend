@@ -39,3 +39,48 @@ export function mapIdentityToZendesk(row) {
     updated_at: isoDate(row.updated_at),
   };
 }
+
+export function mapTicketToZendesk(row) {
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    external_id: row.external_id,
+    requester_id: row.requester_id != null ? Number(row.requester_id) : null,
+    assignee_id: row.assignee_id != null ? Number(row.assignee_id) : null,
+    subject: row.subject,
+    description: row.description,
+    status: row.status,
+    priority: row.priority,
+    via: { channel: row.channel ?? "api" },
+    tags: row.tags ?? [],
+    custom_fields: row.custom_fields ?? {},
+    created_at: isoDate(row.created_at),
+    updated_at: isoDate(row.updated_at),
+  };
+}
+
+export function mapEventToZendesk(row) {
+  if (!row) return null;
+  return {
+    id: Number(row.id),
+    type: row.type,
+    body: row.body,
+    html_body: row.html_body,
+    plain_body: row.plain_body,
+    public: row.is_public,
+    ...(row.payload ?? {}),
+  };
+}
+
+export function mapAuditToZendesk(audit, events = []) {
+  if (!audit) return null;
+  return {
+    id: Number(audit.id),
+    ticket_id: Number(audit.ticket_id),
+    author_id: audit.author_id != null ? Number(audit.author_id) : null,
+    via: audit.via ?? {},
+    metadata: audit.metadata ?? {},
+    created_at: isoDate(audit.created_at),
+    events: events.map(mapEventToZendesk),
+  };
+}

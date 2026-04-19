@@ -2,8 +2,26 @@ import { Router } from "express";
 import { getPool } from "../db.js";
 import { asyncHandler, HttpError } from "../lib/errors.js";
 import { mapUserToZendesk, mapIdentityToZendesk } from "../lib/zendesk.js";
+import { parseZendeskQuery } from "../lib/query.js";
+import { searchUsers } from "../lib/search-db.js";
 
 const router = Router();
+
+// IMPORTANTE: esta ruta debe ir ANTES de /:id para que Express la matchee.
+// GET /api/v2/users/search?query=email:foo@bar.com name:"John Doe"
+router.get(
+  "/search",
+  asyncHandler(async (req, res) => {
+    const parsed = parseZendeskQuery(req.query.query);
+    const users = await searchUsers(parsed);
+    res.json({
+      users: users.map(mapUserToZendesk),
+      count: users.length,
+      next_page: null,
+      previous_page: null,
+    });
+  })
+);
 
 const PATCHABLE_USER_COLUMNS = new Set([
   "name",
