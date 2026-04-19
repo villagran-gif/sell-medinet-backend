@@ -43,6 +43,9 @@ Mount en `/support`. Rutas internas en `/api/v2/*`. Sufijo `.json` opcional
 | GET    | `/support/api/v2/tickets/:id/audits`       | `X-API-Key`   |
 | GET    | `/support/api/v2/tickets/:id/comments`     | `X-API-Key`   |
 | GET    | `/support/api/v2/search?query=…`           | `X-API-Key`   |
+| POST   | `/support/api/v2/sync-log`                 | `X-API-Key`   |
+| GET    | `/support/api/v2/sync-log?entity=…&op=…`   | `X-API-Key`   |
+| GET    | `/support/api/v2/sync-log/stats?days=7`    | `X-API-Key`   |
 
 ### DSL de query (Zendesk)
 
@@ -154,8 +157,44 @@ support-service/
     ├── health.js
     ├── users.js            # GET search, CRUD :id, identities
     ├── tickets.js          # POST, GET/PUT :id, GET :id/audits, :id/comments
-    └── search.js           # /api/v2/search (mixto users+tickets)
+    ├── search.js           # /api/v2/search (mixto users+tickets)
+    └── sync-log.js         # POST/GET diffs durante mirror mode + /stats
 ```
+
+## Sync log (para mirror mode)
+
+Endpoints internos usados por `clinyco_ai` cuando `SUPPORT_BACKEND=mirror` para
+registrar diferencias entre la respuesta de Zendesk y la del satélite.
+
+**Escribir un diff:**
+
+```bash
+curl -X POST https://sell-medinet-backend.onrender.com/support/api/v2/sync-log \
+  -H "X-API-Key: $SUPPORT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"entry":{"entity":"ticket","entity_id":"123","op":"get","source":"mirror","diff":{"missing_field":"priority"}}}'
+```
+
+**Listar diffs recientes:**
+
+```bash
+curl "https://sell-medinet-backend.onrender.com/support/api/v2/sync-log?entity=ticket&limit=50" \
+  -H "X-API-Key: $SUPPORT_API_KEY"
+```
+
+Filtros soportados (todos opcionales): `entity`, `entity_id`, `op`, `source`,
+`since` (ISO date), `until` (ISO date), `limit` (default 100, max 1000).
+Orden: `id DESC` (más reciente primero).
+
+**Stats agregadas en ventana de N días (max 90):**
+
+```bash
+curl "https://sell-medinet-backend.onrender.com/support/api/v2/sync-log/stats?days=7" \
+  -H "X-API-Key: $SUPPORT_API_KEY"
+```
+
+Devuelve `{ window_days, stats: [{entity, op, count}], total }`. Útil para
+medir cuánto diverge el satélite antes de decidir el flip a `satellite`.
 
 ## Plan general (estado)
 
@@ -164,7 +203,8 @@ support-service/
 | 1    | Schema + migrations runner + auth + users  | ✅ |
 | 2    | Tickets, audits, comments                  | ✅ |
 | 3    | Search (users, search global) + .json strip | ✅ |
-| 4    | Cliente HTTP en `clinyco_ai` con flag      | pendiente |
-| 5    | Backfill desde Zendesk                     | pendiente |
-| 6    | Mirror mode: dual-write + diff log         | pendiente |
+| 4    | Cliente HTTP en `clinyco_ai` con flag      | ✅ |
+| 5    | Backfill desde Zendesk                     | ✅ |
+| 6a   | Endpoint sync-log en satélite              | ✅ (este PR) |
+| 6b   | Mirror mode dual-write + diff logging en `clinyco_ai` | pendiente |
 | 7    | Flip a satélite + apagar Zendesk           | pendiente |

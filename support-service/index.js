@@ -6,6 +6,7 @@ import healthRouter from "./routes/health.js";
 import usersRouter from "./routes/users.js";
 import ticketsRouter from "./routes/tickets.js";
 import searchRouter from "./routes/search.js";
+import syncLogRouter from "./routes/sync-log.js";
 
 // Zendesk URLs usan sufijo .json (p.ej. /api/v2/tickets/123.json).
 // Lo stripeamos aquí para que el router matchee con/sin sufijo.
@@ -32,6 +33,7 @@ export function createSupportRouter({ autoMigrate = true } = {}) {
   router.use("/api/v2/users", usersRouter);
   router.use("/api/v2/tickets", ticketsRouter);
   router.use("/api/v2/search", searchRouter);
+  router.use("/api/v2/sync-log", syncLogRouter);
 
   router.use(errorHandler);
 
