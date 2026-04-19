@@ -16,6 +16,15 @@ export const PATCHABLE_TICKET_COLUMNS = new Set([
   "custom_fields",
 ]);
 
+// Columnas JSONB: pg trata arrays JS como arrays Postgres, no como JSON.
+// Para evitar "invalid input syntax for type json" cuando llegan arrays
+// (p.ej. Zendesk custom_fields = [{id, value}, ...]), serializamos nosotros.
+const JSONB_TICKET_COLUMNS = new Set(["custom_fields"]);
+
+function toJsonbParam(value) {
+  return JSON.stringify(value ?? null);
+}
+
 async function insertAuditWithComment(client, ticket, authorId, comment) {
   const auditRes = await client.query(
     `INSERT INTO support.ticket_audits
@@ -25,8 +34,8 @@ async function insertAuditWithComment(client, ticket, authorId, comment) {
     [
       ticket.id,
       authorId ?? null,
-      { channel: ticket.channel ?? "api" },
-      {},
+      toJsonbParam({ channel: ticket.channel ?? "api" }),
+      toJsonbParam({}),
     ]
   );
   const audit = auditRes.rows[0];
@@ -55,7 +64,7 @@ export async function createTicket(input) {
       if (input[col] === undefined) continue;
       columns.push(col);
       placeholders.push(`$${i++}`);
-      values.push(input[col]);
+      values.push(JSONB_TICKET_COLUMNS.has(col) ? toJsonbParam(input[col]) : input[col]);
     }
     if (columns.length === 0) {
       throw Object.assign(new Error("ticket payload is empty"), { status: 400 });
@@ -106,7 +115,7 @@ export async function updateTicket(id, patch, comment, authorId) {
       for (const [key, value] of Object.entries(patch)) {
         if (!PATCHABLE_TICKET_COLUMNS.has(key)) continue;
         sets.push(`${key} = $${i++}`);
-        values.push(value);
+        values.push(JSONB_TICKET_COLUMNS.has(key) ? toJsonbParam(value) : value);
       }
       if (sets.length > 0) {
         values.push(id);

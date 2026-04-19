@@ -35,6 +35,10 @@ const PATCHABLE_USER_COLUMNS = new Set([
   "tags",
 ]);
 
+// Columnas JSONB: evitar "invalid input syntax for type json" cuando llega
+// un array. pg serializa arrays JS como Postgres arrays, no como JSON.
+const JSONB_USER_COLUMNS = new Set(["user_fields"]);
+
 function parseUserId(raw) {
   const id = Number(raw);
   if (!Number.isInteger(id) || id <= 0) {
@@ -73,7 +77,9 @@ router.put(
     for (const [key, value] of Object.entries(patch)) {
       if (!PATCHABLE_USER_COLUMNS.has(key)) continue;
       sets.push(`${key} = $${i++}`);
-      values.push(value);
+      values.push(
+        JSONB_USER_COLUMNS.has(key) ? JSON.stringify(value ?? null) : value
+      );
     }
     if (sets.length === 0) {
       throw new HttpError(400, "no patchable fields provided");
