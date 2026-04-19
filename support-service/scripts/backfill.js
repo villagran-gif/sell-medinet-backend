@@ -50,41 +50,38 @@ function asJsonb(value) {
 // Fetch
 // ---------------------------------------------------------------------------
 
-// Fetch all tickets via incremental export API (no 1000-result cap de Search).
-// Itera cursor-based, filtra por status abierto en memoria, respeta --limit.
+// Fetch tickets via List Tickets API sorteado por updated_at DESC.
+// - Sin cap de 1000 resultados (ese límite es de Search API, no de List).
+// - Sort desc → tickets abiertos (típicamente recientes) aparecen primero,
+//   por lo que --limit corta temprano sin escanear históricos cerrados.
+// - Filtra status en memoria (new/open/pending/hold).
+// Intentamos incremental export como fallback si List devuelve un error.
 const OPEN_STATUSES = new Set(["new", "open", "pending", "hold"]);
 
 async function fetchOpenTickets() {
-  log("fetching tickets via incremental export (status<solved filtered in memory)...");
+  log("fetching tickets (List API, sort=updated_at desc, filter status in memory)...");
   const tickets = [];
-  let cursor = null;
   let scanned = 0;
 
-  while (true) {
-    const url = cursor
-      ? `/api/v2/incremental/tickets/cursor.json?cursor=${encodeURIComponent(cursor)}`
-      : `/api/v2/incremental/tickets/cursor.json?start_time=0`;
-    const data = await zdFetch(url);
-    const batch = data.tickets || [];
-    scanned += batch.length;
+  // URLSearchParams encodea los brackets de `page[size]` correctamente.
+  const params = new URLSearchParams();
+  params.set("page[size]", "100");
+  params.set("sort_by", "updated_at");
+  params.set("sort_order", "desc");
+  const initialPath = `/api/v2/tickets.json?${params.toString()}`;
 
-    for (const t of batch) {
-      if (OPEN_STATUSES.has(t.status)) {
-        tickets.push(t);
-        if (LIMIT && tickets.length >= LIMIT) {
-          log(`found ${tickets.length} open tickets (scanned ${scanned})`);
-          return tickets;
-        }
+  for await (const t of zdPaginate(initialPath, "tickets")) {
+    scanned++;
+    if (OPEN_STATUSES.has(t.status)) {
+      tickets.push(t);
+      if (LIMIT && tickets.length >= LIMIT) {
+        log(`found ${tickets.length} open tickets (scanned ${scanned})`);
+        return tickets;
       }
     }
-
-    if (scanned > 0 && scanned % 5000 < batch.length) {
-      log(`scanning... ${scanned} tickets seen, ${tickets.length} open so far`);
+    if (scanned % 500 === 0) {
+      log(`scanning... ${scanned} seen, ${tickets.length} open so far`);
     }
-
-    if (data.end_of_stream) break;
-    cursor = data.after_cursor;
-    if (!cursor) break;
   }
 
   log(`found ${tickets.length} open tickets (scanned ${scanned})`);
