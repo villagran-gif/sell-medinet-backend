@@ -1,0 +1,19 @@
+# CODEOWNERS — cualquier cambio a rutas protegidas requiere approval humana.
+# Sintaxis: https://docs.github.com/articles/about-code-owners
+
+# Owner por defecto (fallback)
+*                           @villagran-gif
+
+# Infraestructura y CI: review humana obligatoria
+/.github/                   @villagran-gif
+/render.yaml                @villagran-gif
+
+# Documentos de gobierno de agentes
+/CODEOWNERS                 @villagran-gif
+/CLAUDE.md                  @villagran-gif
+/AGENTS.md                  @villagran-gif
+
+# Código runtime principal: review humana obligatoria
+/server.js                  @villagran-gif
+/package.json               @villagran-gif
+/package-lock.json          @villagran-gif
