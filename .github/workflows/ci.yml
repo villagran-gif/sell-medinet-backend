@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Syntax check
+        run: node --check server.js
+
+      - name: Smoke boot (3s)
+        env:
+          API_KEY: ci-dummy-key
+          PORT: 3000
+        run: |
+          node server.js &
+          PID=$!
+          sleep 3
+          if ! kill -0 $PID 2>/dev/null; then
+            echo "Server exited unexpectedly"
+            exit 1
+          fi
+          kill $PID
+          wait $PID 2>/dev/null || true
