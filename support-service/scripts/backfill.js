@@ -39,22 +39,55 @@ function vlog(...args) {
   if (VERBOSE) console.log("[backfill:v]", ...args);
 }
 
+// pg trata arrays JS como arrays Postgres (INT[]/TEXT[]), no como JSONB.
+// Para columnas JSONB, serializar explícitamente. Zendesk devuelve p.ej.
+// custom_fields como array de {id, value}, que debe viajar como JSON string.
+function asJsonb(value) {
+  return JSON.stringify(value ?? null);
+}
+
 // ---------------------------------------------------------------------------
 // Fetch
 // ---------------------------------------------------------------------------
 
+// Fetch all tickets via incremental export API (no 1000-result cap de Search).
+// Itera cursor-based, filtra por status abierto en memoria, respeta --limit.
+const OPEN_STATUSES = new Set(["new", "open", "pending", "hold"]);
+
 async function fetchOpenTickets() {
-  const query = encodeURIComponent("type:ticket status<solved");
-  log("fetching open tickets from Zendesk...");
+  log("fetching tickets via incremental export (status<solved filtered in memory)...");
   const tickets = [];
-  for await (const t of zdPaginate(
-    `/api/v2/search.json?query=${query}&sort_by=updated_at&sort_order=desc&per_page=100`,
-    "results"
-  )) {
-    tickets.push(t);
-    if (LIMIT && tickets.length >= LIMIT) break;
+  let cursor = null;
+  let scanned = 0;
+
+  while (true) {
+    const url = cursor
+      ? `/api/v2/incremental/tickets/cursor.json?cursor=${encodeURIComponent(cursor)}`
+      : `/api/v2/incremental/tickets/cursor.json?start_time=0`;
+    const data = await zdFetch(url);
+    const batch = data.tickets || [];
+    scanned += batch.length;
+
+    for (const t of batch) {
+      if (OPEN_STATUSES.has(t.status)) {
+        tickets.push(t);
+        if (LIMIT && tickets.length >= LIMIT) {
+          log(`found ${tickets.length} open tickets (scanned ${scanned})`);
+          return tickets;
+        }
+      }
+    }
+
+    if (scanned > 0 && scanned % 5000 < batch.length) {
+      log(`scanning... ${scanned} tickets seen, ${tickets.length} open so far`);
+    }
+
+    if (data.end_of_stream) break;
+    cursor = data.after_cursor;
+    if (!cursor) break;
   }
-  log(`found ${tickets.length} open tickets`);
+
+  log(`found ${tickets.length} open tickets (scanned ${scanned})`);
   return tickets;
 }
 
@@ -127,7 +160,7 @@ async function upsertUser(client, u) {
       u.notes ?? null,
       u.role ?? "end-user",
       u.active ?? true,
-      u.user_fields ?? {},
+      asJsonb(u.user_fields ?? {}),
       u.tags ?? [],
     ]
   );
@@ -191,7 +224,7 @@ async function upsertTicket(client, t) {
       t.priority ?? null,
       t.via?.channel ?? "api",
       t.tags ?? [],
-      t.custom_fields ?? {},
+      asJsonb(t.custom_fields ?? []),
       t.created_at ?? null,
       t.updated_at ?? null,
     ]
@@ -214,8 +247,8 @@ async function upsertAuditAndEvents(client, ticketId, audit) {
       audit.id,
       ticketId,
       audit.author_id ?? null,
-      audit.via ?? {},
-      audit.metadata ?? {},
+      asJsonb(audit.via ?? {}),
+      asJsonb(audit.metadata ?? {}),
       audit.created_at ?? null,
     ]
   );
@@ -245,7 +278,7 @@ async function upsertAuditAndEvents(client, ticketId, audit) {
         html_body ?? null,
         plain_body ?? null,
         isPublic ?? true,
-        rest,
+        asJsonb(rest),
       ]
     );
   }
