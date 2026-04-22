@@ -1,6 +1,7 @@
 import express from "express";
 import { randomUUID } from "crypto";
 import { createSupportRouter } from "./support-service/index.js";
+import { createChatwootWebhookRouter } from "./chatwoot-webhook/index.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,6 +25,23 @@ if (process.env.SUPPORT_ENABLED === "true") {
   console.log("[support-service] mounted at /support");
 } else {
   console.log("[support-service] disabled (set SUPPORT_ENABLED=true to enable)");
+}
+
+// ======================
+// chatwoot-webhook (opt-in vía CHATWOOT_WEBHOOK_ENABLED=true)
+// Receptor de eventos de Chatwoot. Persiste raw payloads en chatwoot.raw_events.
+// Ver chatwoot-webhook/README.md.
+// ======================
+if (process.env.CHATWOOT_WEBHOOK_ENABLED === "true") {
+  app.use(
+    "/chatwoot-webhook",
+    createChatwootWebhookRouter({
+      autoMigrate: process.env.CHATWOOT_AUTO_MIGRATE !== "false",
+    })
+  );
+  console.log("[chatwoot-webhook] mounted at /chatwoot-webhook");
+} else {
+  console.log("[chatwoot-webhook] disabled (set CHATWOOT_WEBHOOK_ENABLED=true to enable)");
 }
 
 // ======================
