@@ -1,10 +1,53 @@
 # Migración Zendesk → Chatwoot + Frappe CRM + sell-medinet-backend
 
-**Última actualización**: 2026-04-22
+**Última actualización**: 2026-04-26
 **Branch activa**: `claude/whatsapp-system-user-token-WKAZ7`
 **Repos involucrados**:
 - `villagran-gif/sell-medinet-backend` (este repo) — bridge/satélite
 - `villagran-gif/clinyco_ai` — integración profunda con Zendesk, se migra por URL swap
+
+---
+
+## 0. Decisión final (2026-04-26): Cloud paid, no self-host
+
+Tras 4 días intentando self-host en Hetzner, el equipo decide **pagar Cloud
+plans** por Chatwoot y Frappe para tener funcionalidad inmediata.
+
+| | Plan elegido | Costo |
+|---|---|---|
+| Chatwoot | **Cloud Startups** (10 agentes) | $190/mo |
+| Frappe | **Cloud Sites $50** (Frappe CRM, region Frankfurt) | $50/mo |
+| **Total Cloud nuevo** | | **$240/mo = $2,880/año** |
+| Vs Zendesk actual | $2,200/mo = $26,400/año | |
+| **Ahorro neto** | | **$23,520/año** |
+
+### Razones del pivot
+
+1. **WhatsApp Embedded Signup** (solo en Cloud o self-host con flags + dominio
+   verificado) destraba el "Invalid Credentials" que bloqueó self-host.
+2. **Frappe Cloud entrega site listo en 5 min** vs cloud-init Hetzner que falló
+   silencioso 3 veces.
+3. **El ahorro vs Zendesk es tan grande ($23k/año) que la diferencia
+   self-host vs Cloud ($30 vs $240/mo) es ruido**.
+4. **Sin SSH desde sandbox** — debugging self-host requiere acceso humano que
+   bloquea el throughput de Claude/Codex.
+
+### Hetzner servers — decommission cuando Cloud esté validado
+
+- `chatwoot-clinyco` (cx23, 91.98.234.232) — destruir tras migrar contactos a
+  Chatwoot Cloud.
+- `frappe-clinyco` (cx33, 91.98.141.41) — destruir cuando confirmemos Frappe
+  Cloud anda. **Cloud-init nunca llegó a correr correctamente, no hay datos
+  que perder**.
+- Bucket S3 `clinyco-frappe-backups` — se mantiene; Frappe Cloud puede usarlo
+  para backups secundarios fuera de Frappe.
+
+### Path partner Frappe Chile (oportunidad lateral)
+
+No hay partners Frappe certificados en Chile (revisado oficial directory
+`frappe.io/partners/list` — cero LATAM). Demanda evidente en foros pero sin
+oferta. Posible vertical futura: certificarse como Partner y revender el CRM
+médico custom a otras clínicas chilenas. Pendiente decisión, no bloqueante.
 
 ---
 

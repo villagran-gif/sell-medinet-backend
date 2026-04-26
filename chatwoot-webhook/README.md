@@ -72,12 +72,15 @@ Handlers (cuando existan) van a consumir esta tabla vía cursor
 
 ## Configurar del lado de Chatwoot
 
-En el panel de Chatwoot de la cuenta:
+En **Chatwoot Cloud** (`app.chatwoot.com`) o el self-host:
 
 1. Settings → Integrations → Webhooks → **Add new webhook**.
 2. URL: `https://sell-medinet-backend.onrender.com/chatwoot-webhook/events`.
 3. Subscribed events: marcar `conversation_created`, `conversation_updated`, `message_created`, `contact_created`, `contact_updated`.
 4. El secret que definiste en Chatwoot debe coincidir con `CHATWOOT_WEBHOOK_SECRET` en Render.
+
+> **Nota 2026-04-26**: el plan oficial es **Chatwoot Cloud Startups** ($190/mo, 10 agentes).
+> El self-host quedó deprecado tras decisión del 2026-04-26 (ver `docs/migration-chatwoot-frappe.md` § 0).
 
 ## Roadmap
 
