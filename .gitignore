@@ -9,3 +9,5 @@ npm-debug.log*
 .idea/
 coverage/
 dist/
+migration/csv-zendesk/
+migration/*.csv
