@@ -10,9 +10,10 @@
     "v2_changelog": [
       "Choices reales extraídos de Zendesk API en vez de guesses",
       "Decisión humana 1: cirujanos unificados (Rodrigo Villagran/Alberto Sirabo/Andres San Martin sin variantes Santiago/Morales)",
-      "Decisión humana 2: colaboradores unificados con esquema BAR (8 nombres: Allison, Camila, Carolin, Danitza, Gabriela, Giselle, MariaPaz, Magaly) — Link a catálogo único",
+      "Decisión humana 2: colaboradores unificados con esquema BAR (8 nombres con apellidos completos)",
       "Decisión humana 3: Etiquetas Contact preserva 12 valores mixtos (procedimientos+cirujanos) tal cual",
-      "Decisión humana 4: cirugias_previas SOLO en Deal (5 procedimientos reales), eliminado de Contact"
+      "Decisión humana 4: cirugias_previas SOLO en Deal (5 procedimientos reales), eliminado de Contact",
+      "Decisión humana 5: programa_medico_entregado, documentacion_ingreso y validacion_pad unificados a OK/PENDIENTE (consistencia)"
     ]
   },
 
@@ -20,7 +21,9 @@
     {"id": 1, "topic": "Cirujano Bariátrico", "decision": "Unificar duplicados con sufijo Santiago/Morales: RODRIGO VILLAGRAN, ALBERTO SIRABO, ANDRES SAN MARTIN quedan en versión sin sufijo. Total cirujanos pasa de 17 → 13."},
     {"id": 2, "topic": "Colaboradores", "decision": "Esquema único catálogo (Clinyco Colaborador Catalogo) con 8 nombres del schema BAR. Cada Deal puede tener N colaboradores via child table, sin diferenciar nombre por pipeline."},
     {"id": 3, "topic": "Etiquetas Contact", "decision": "Mantener 12 valores mixtos (procedimientos+cirujanos) — datos legacy, limpiar después en Frappe."},
-    {"id": 4, "topic": "Cirugías Previas", "decision": "Eliminar campo en Contact. Mantener SOLO en Deal con los 5 procedimientos reales (GASTRECTOMÍA EN MANGA, BYPASS GASTRICO, COLECISTECTOMÍA, HERNIOPLASTIA, HISTERECTOMÍA) via child table Cirugia Previa Item."}
+    {"id": 4, "topic": "Cirugías Previas", "decision": "Eliminar campo en Contact. Mantener SOLO en Deal con los 5 procedimientos reales (GASTRECTOMÍA EN MANGA, BYPASS GASTRICO, COLECISTECTOMÍA, HERNIOPLASTIA, HISTERECTOMÍA) via child table Cirugia Previa Item."},
+    {"id": 5, "topic": "Estados booleanos consistentes", "decision": "programa_medico_entregado (SI/NO → OK/PENDIENTE), documentacion_ingreso (LISTO/PENDIENTE → OK/PENDIENTE), validacion_pad (5 opciones → OK/PENDIENTE). Migration logic: mapear SI/LISTO/'Posible evaluación PAD'→OK, NO/PENDIENTE/'No aplica'→PENDIENTE. Antonia debe actualizar lógica."},
+    {"id": 6, "topic": "Apellidos colaboradores", "decision": "MariaPaz Plonka, Magaly Cerquera (completados manualmente — Zendesk no tenía estos apellidos)."}
   ],
 
   "lead_sources": {
@@ -158,23 +161,25 @@
     },
 
     "validacion_pad": {
-      "options": "SI\nNO\nPENDIENTE\nPosible evaluación PAD Fonasa\nNo aplica PAD Fonasa por Tramo A",
-      "_total": 5,
+      "options": "OK\nPENDIENTE",
+      "_total": 2,
       "_zendesk_field_id": 2760712,
-      "_note": "Las primeras 3 son del schema Zendesk. Las últimas 2 son strings que Antonia escribe (extraídas de clinyco_AI/extraction/)"
+      "_unified_from_zendesk": "5 → 2 (decisión humana). Migration: 'SI'→'OK', 'PENDIENTE'→'PENDIENTE', 'NO'→'PENDIENTE', strings Antonia ('Posible evaluación...', 'No aplica...') → 'PENDIENTE'.",
+      "_note": "Antonia debe actualizar lógica para escribir solo 'OK' o 'PENDIENTE'"
     },
 
     "programa_medico_entregado": {
-      "options": "SI\nNO",
+      "options": "OK\nPENDIENTE",
       "_total": 2,
-      "_zendesk_field_id": 2705206
+      "_zendesk_field_id": 2705206,
+      "_unified_from_zendesk": "SI/NO → OK/PENDIENTE (decisión humana, consistencia con documentacion_ingreso y validacion_pad)"
     },
 
     "documentacion_ingreso": {
-      "options": "LISTO\nPENDIENTE",
+      "options": "OK\nPENDIENTE",
       "_total": 2,
       "_zendesk_field_id": 2705215,
-      "_note": "Vocabulario distinto a SI/NO — preservar"
+      "_unified_from_zendesk": "LISTO/PENDIENTE → OK/PENDIENTE (decisión humana)"
     },
 
     "comision_codigo": {
@@ -339,8 +344,8 @@
         {"nombre": "Danitza", "apellido": "Olivera"},
         {"nombre": "Gabriela", "apellido": "Heck"},
         {"nombre": "Giselle", "apellido": "Santander"},
-        {"nombre": "MariaPaz", "apellido": ""},
-        {"nombre": "Magaly", "apellido": ""}
+        {"nombre": "MariaPaz", "apellido": "Plonka"},
+        {"nombre": "Magaly", "apellido": "Cerquera"}
       ],
       "_typo_fix": "Zendesk BALON tenía 'Danitza Olivero' (sic). Catálogo usa 'Olivera' como canonical."
     },
