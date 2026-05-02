@@ -1,10 +1,66 @@
 # Migración Zendesk → Chatwoot + Frappe CRM + sell-medinet-backend
 
-**Última actualización**: 2026-04-26
+**Última actualización**: 2026-05-02
 **Branch activa**: `claude/whatsapp-system-user-token-WKAZ7`
 **Repos involucrados**:
 - `villagran-gif/sell-medinet-backend` (este repo) — bridge/satélite
 - `villagran-gif/clinyco_ai` — integración profunda con Zendesk, se migra por URL swap
+
+---
+
+## −1. Inventario completo del ecosistema (2026-05-02)
+
+Sesión paralela detectó que el ecosistema Zendesk Sell de Clínyco abarca
+**13 repositorios** (no solo `clinyco_ai` y `sell-medinet-backend`):
+
+| # | Repo | Función | Llama a Zendesk Sell? |
+|---|---|---|---|
+| 1 | `clinyco_AI` | IA conversacional (Antonia, EugenIA, Melania, scoring, ZAPS) | Sí, intensivo |
+| 2 | `sell-medinet-backend` | Bridge satellite (este repo) | A través del satellite |
+| 3 | `Portal_Web__ZendeskSell_BOX_IA_Medinet_Documentos_DInamicos_PDF` | **box-ai-clinyco.onrender.com** — portal IA paste-text → contact/deal | Sí, 12 endpoints (`lib/sell.js`) |
+| 4 | `Widget_Sell_ZendeskSell_BOX_IA_Medinet_...` | Zendesk Sell App widget (deal_card) | Sí, vía host app |
+| 5 | `portal_Clinyco_BARRA_Zendesk_Sell` | Barra UI/extensión | Sí (asumido) |
+| 6 | `portal_Clinyco_BARRA_Zendesk_Sell2` | v2 de #5 | Sí |
+| 7 | `portal_Clinyco_BARRA_Zendesk_Sell3.1` | v3.1 de #5 | Sí |
+| 8 | `sell-medinet-app-en-zendesk-app` | App nativa Zendesk Sell | Sí |
+| 9 | `sell-medinet-app-en-zendesk-app2` | v2 de #8 | Sí |
+| 10 | `whatsapp-web-zendesk-sell-extension` | Extensión Chrome WhatsApp Web → Sell | Sí |
+| 11 | `whatsappSell_RENDER` | Service Render adicional WhatsApp + Sell | Sí (asumido) |
+| 12 | `Examenes_Generar_App_en_SELL` | App generadora de exámenes | Sí |
+| 13 | `fonasapadcl` | Portal fonasapad.cl | Por confirmar |
+
+### Implicancia para la migración
+
+**Path A (sell-service satellite)** se vuelve obligatorio. Si rewrite cada surface
+individualmente (Path B), son 12+ repos × ~200-500 LOC cada uno = mucho riesgo y tiempo.
+
+Con sell-service satellite emulando Sell API v2 → cada surface solo cambia
+`SELL_API_BASE` env var. Single point of swap.
+
+### Endpoints Zendesk Sell que el satellite debe emular
+
+Basado en `Portal_Web/lib/sell.js` (12 funciones identificadas):
+
+```
+GET  /v2/contact/custom_fields
+GET  /v2/deal/custom_fields
+GET  /v2/lead/custom_fields
+GET  /v2/pipelines?per_page=200
+GET  /v2/pipelines?ids=...
+GET  /v2/stages?ids= | ?pipeline_id=&active=true&sort_by=position
+GET  /v2/deals?ids=  |  /v2/deals/{id}
+GET  /v2/contacts/{id}
+GET  /v2/users?status=active&confirmed=true
+POST /v2/contacts
+POST /v2/deals
+POST /v2/notes
+
+# Search API (host distinto: api.sell.zendesk.com)
+POST /v3/{contacts|deals}/search
+```
+
+15 endpoints totales. Surface acotada → emulable en Express en `sell-service/`
+mismo patrón que `support-service/` ya implementado.
 
 ---
 
@@ -342,3 +398,186 @@ Arrancar en paralelo Fase 0 (deploy Frappe) + Fase 1a (conectar WhatsApp):
 > Ya tengo: [pegar tokens conseguidos].
 > Estado infra: [estado actual].
 > Arrancamos por Fase 0 + 1a en paralelo.
+
+---
+
+## 13. Schema Zendesk Sell extraído (2026-05-02)
+
+Re-extraído vía Zendesk Sell API v2 en `/tmp/zendesk-schema/*.json`:
+
+| Recurso | Endpoint | Cantidad |
+|---|---|---|
+| Pipelines | `/v2/pipelines` | 4 (Bariátricas 1290779, Balones 4823817, Plástica 4959507, General 5049979) |
+| Stages | `/v2/stages` | 30 (no 32 como decía estimación previa) |
+| Contact custom fields | `/v2/contact/custom_fields` | 75 (con duplicados — 27 canonical) |
+| Deal custom fields | `/v2/deal/custom_fields` | 69 (con duplicados — ~50 canonical) |
+| Lead custom fields | `/v2/lead/custom_fields` | 0 (HTTP 400, Sell no soporta lead custom fields) |
+| Deal sources | `/v2/deal_sources` | 21 |
+| Lead sources | `/v2/lead_sources` | 14 |
+| Deal unqualified reasons | `/v2/deal_unqualified_reasons` | 0 |
+
+### Stages por pipeline
+
+```
+Pipeline 1290779 (Bariátricas, 8 stages):
+  CANDIDATO → EXAMENES PRE-PAD → EXAMENES ENVIADOS → PROCESO PREOP →
+  CERRADO AGENDADO → CERRADO OPERADO (won) → SUSPENDIDO / SIN RESPUESTA
+
+Pipeline 4823817 (Balones, 8 stages):
+  CANDIDATOS → EXAMENES ALLURION → EXAMENES ORBERA → CONTROLES PRE-INSTALACIÓN →
+  CERRADO AGENDADO → CERRADO INSTALADO (won) → DESCALIFICADO / SIN RESPUESTA
+
+Pipeline 4959507 (Plástica, 7 stages):
+  CANDIDATO → ORDEN DE EXAMENES → PROCESO PRE-OPERATORIO →
+  CERRADO AGENDADO → CERRADO OPERADO (won) → DESCALIFICADO / SIN RESPUESTA
+
+Pipeline 5049979 (General, 7 stages):
+  (igual que Plástica)
+```
+
+### Decisiones de mapping a Frappe
+
+1. **Custom fields canonical post-dedup**:
+   - 27 contact custom fields (consolidando Edad #1-#5 → 1, Estatura ×7 → 1, etc.)
+   - ~50 deal custom fields
+   - 8 fields médicos básicos en Lead (no había en Zendesk)
+
+2. **`prevision` y `tramo_modalidad`** viven en Contact con `fetch_from`
+   automático al Deal (read_only en Deal, edit en Contact).
+
+3. **`PESO (metros)`** (Deal id 2763860) es altura en metros (1.75 format) — no peso.
+   Migración: si poblado → usar como `estatura_m`. Sino, fallback a `Estatura` (cm)
+   con conversión (>10 → dividir por 100).
+
+4. **`fecha`** (Deal id 1291628, datetime) = fecha "agregado el". Consolidar con
+   `*Fecha Hito 1*` en `fecha_hito_1` (Date).
+
+5. **`Deal Sources`** (Frappe FCRM no tiene `CRM Deal Source` doctype, solo
+   `CRM Lead Source`): reusar `CRM Lead Source` con custom field `is_for_deal`
+   (Check) para flag. Lead+Deal sources tienen overlap (~24-25 únicos).
+
+6. **Server scripts** Frappe para auto-cálculo:
+   - `rut → rut_normalizado` (algoritmo módulo 11 chileno)
+   - `peso + estatura → imc`
+   - `fecha_cirugia − fecha_hito_2 → diff_dias`
+
+### Bug latente identificado (heredado de Zendesk)
+
+El ZAP `update-comisiones` (en `clinyco_AI/ZAPS/update-comisiones/index.js`)
+escribe `FECHA DE CIRUGÍA: ""` (string vacío) en cada deal update, borrando
+manualmente el valor real cada vez que el ZAP corre. Workaround durante
+migración: en `sell-service/` satellite, ignorar campos con valor `""` en
+PUT requests para no propagar el bug a Frappe.
+
+---
+
+## 14. Mapeo integraciones Zendesk × clinyco_AI (2026-04-29)
+
+Análisis completo de 44 custom fields con lógica de negocio en `clinyco_AI`:
+
+### Servicios externos integrados
+
+| Servicio | Estado | Criticidad migración |
+|---|---|---|
+| Zendesk Sell API v2 | ACTIVO | A reemplazar (Frappe target) |
+| Zendesk Support API | ACTIVO solo lectura | A reemplazar (Chatwoot Cloud) |
+| Medinet Booking (`clinyco.medinetapp.com`) | ACTIVO | **PRESERVAR** — depende de `RUT_normalizado`, `c_tel1`, `dealEstatura`, `dealPeso` |
+| Box AI clinyco (`box-ai-clinyco.onrender.com`) | ACTIVO | **PRESERVAR** — RUT lookup desde server.js |
+| Facebook Conversions API (pixel 1513925433070873) | ACTIVO | **PRESERVAR** — ZAP `meta-conversion-leads` |
+| Sunco WhatsApp | ACTIVO | A reemplazar (Chatwoot Cloud) |
+
+### Custom fields críticos (rompen Medinet/Antonia/Scoring)
+
+🔴 **CRITICAL**:
+1. `RUT_normalizado` — Medinet busca pacientes por este field
+2. `Peso + Estatura` (Deal) → IMC → lead scoring (+25 pts), pipeline routing
+3. `Interés` (dealInteres) → drive del pipeline_id
+4. `Previsión + Tramo/Modalidad` → FONASA PAD eligibility (Antonia detecta tramo)
+5. `c_tel1` (Contact) → WhatsApp link generation
+
+🟡 **Important**:
+- ComisionBAR1-6 → códigos hardcoded 8001/5002-6006
+- WhatsApp_Contactar_LINK → wa.me/{digits} generado por whatsappLink()
+
+### ZAPS activos (4)
+
+| ZAP | Trigger | Reads | Writes |
+|---|---|---|---|
+| `rut-normalizado-crear-trato` | New Deal | RUT o ID | RUT_normalizado |
+| `normaliza-rut-contacto` | New Contact | RUT o ID | RUT_normalizado |
+| `update-comisiones` | Deal Updated | RUT, fechas, colaboradores | WhatsApp_Contactar_LINK, ComisionBAR1-6 (BUG: borra FECHA DE CIRUGÍA) |
+| `meta-conversion-leads` | New Deal | contact_id (SHA-256) | POST a Facebook pixel |
+
+---
+
+## 15. Plan de ejecución consolidado (2026-05-02)
+
+### Fase 1 — Schema Frappe Cloud (esta semana)
+
+**Batch 1 — limpieza** (destructivo, requiere confirmación):
+- DELETE 12 CRM Lead demo (Alice/Bob/...)
+- DELETE 7 CRM Deal demo
+- DELETE/auditar 13 CRM Lead Source y 7 CRM Lead Status defaults
+
+**Batch 2 — fundamentos**:
+- CRM Lead Source: 14 + 21 (con flag `is_for_deal` para deal-sources)
+- CRM Lead Status reales (mapeados de stages, agrupados por pipeline)
+- CRM Deal Status reales
+
+**Batch 3 — custom fields canonical** (~77 total):
+- 27 contact custom fields con dt/fieldname/fieldtype/options
+- 50 deal custom fields
+- 8 lead custom fields médicos (RUT, prevision, edad, peso, estatura, IMC, tabaco, enfermedades_cronicas)
+- `fetch_from` para prevision/tramo_modalidad de Contact a Deal
+
+**Batch 4 — child DocTypes**:
+- `Comisiones` (istable=1): codigo, monto, fecha_pago, colaborador
+- `Colaboradores` (istable=1): pipeline, posicion, colaborador (Link User)
+- Table fields a CRM Deal apuntando a estos
+
+**Batch 5 — Server Scripts**:
+- `rut_normalizado` before_save (Contact + Deal)
+- `imc` before_save (Deal)
+- `diff_dias` before_save (Deal)
+
+**Pre-ejecución**: dump del schema target a `migration/frappe-schema.json` versionado
+en el repo para review humano antes de aplicar.
+
+### Fase 2 — Sell-service satellite (próxima semana)
+
+- Scaffold `sell-medinet-backend/sell-service/` (mismo patrón que `support-service/`)
+- Implementar 15 endpoints (ver sección −1)
+- Mirror mode dual-write Zendesk + Frappe (validación diaria)
+- Workaround del bug FECHA DE CIRUGÍA (ignorar `""` en PUT)
+- Flip `SELL_API_BASE` en cada surface (12+ repos):
+  - `clinyco_AI` (variable env Render)
+  - `Portal_Web` (variable env Render)
+  - `Widget_Sell` (manifest install param)
+  - `portal_Clinyco_BARRA × 3`
+  - `sell-medinet-app-en-zendesk-app × 2`
+  - `whatsapp-web-zendesk-sell-extension`
+  - `whatsappSell_RENDER`
+  - `Examenes_Generar_App_en_SELL`
+
+### Fase 3 — Cutover
+
+- Validar 1-2 semanas con dual-write
+- Cancelar Zendesk Sell + Support
+- Decommission Hetzner servers (chatwoot-clinyco + frappe-clinyco)
+
+### Bloqueante actual
+
+WhatsApp Cloud API conexión a Chatwoot Cloud con número `+56 9 2645 9376` /
+WABA `472253805966327`. Diagnóstico: la WABA no aparece en Embedded Signup
+(filtrada porque ya tiene phone number registrado, según hipótesis), y el manual
+flow da "Provider config Invalid Credentials" (la app `1697421917913182`
+"chatwoot" no tiene la WABA conectada en "Activos conectados" — solo cuentas
+publicitarias).
+
+**Workarounds**:
+1. Conectar WABA a la app desde Meta Business Manager → contactar a Meta si la UI
+   no expone el toggle.
+2. Usar número backup `+56 9 7251 7569` (virgen) via Embedded Signup, y migrar
+   `+56 9 2645 9376` después.
+3. Soporte Chatwoot Cloud (incluido en plan Startups) — abrir ticket con el
+   stack trace.
