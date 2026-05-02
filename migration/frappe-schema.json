@@ -1,0 +1,338 @@
+{
+  "_meta": {
+    "doc_version": "1.0",
+    "generated_at": "2026-05-02",
+    "purpose": "Schema target Frappe CRM para Clínyco — usado como referencia durante migración Zendesk Sell → Frappe.",
+    "branch": "claude/whatsapp-system-user-token-WKAZ7",
+    "source_analysis": "docs/migration-chatwoot-frappe.md (secciones 13-15)",
+    "review_required_before_apply": true,
+    "apply_via": "migration/apply-schema.js (TODO) o calls API directos a Frappe Cloud"
+  },
+
+  "lead_sources": {
+    "_doctype_target": "CRM Lead Source",
+    "_strategy": "Reusar este doctype para lead+deal sources. Custom field 'is_for_deal' (Check) y 'is_for_lead' (Check) para flagear scope.",
+    "_delete_defaults": [
+      "Email", "Existing Customer", "Reference", "Advertisement",
+      "Cold Calling", "Exhibition", "Supplier Reference", "Mass Mailing",
+      "Customer's Vendor", "Campaign", "Walk In", "Facebook", "Website"
+    ],
+    "items": [
+      {"name": "landbot", "is_for_lead": 1, "is_for_deal": 1, "zendesk_lead_id": 1580704, "zendesk_deal_id": 14005855},
+      {"name": "Balón Elipse", "is_for_lead": 1, "is_for_deal": 1, "zendesk_lead_id": 1580705, "zendesk_deal_id": 14006976},
+      {"name": "Consulta Centro Médico", "is_for_lead": 1, "is_for_deal": 1, "zendesk_lead_id": 1895573, "zendesk_deal_id": 14014027},
+      {"name": "Teléfono", "is_for_lead": 1, "is_for_deal": 1, "zendesk_lead_id": 1895591, "zendesk_deal_id": 14014284},
+      {"name": "Whatsapp recepción", "is_for_lead": 1, "is_for_deal": 1, "zendesk_lead_id": 1895603, "zendesk_deal_id": 14009706},
+      {"name": "FacebookLeads", "is_for_lead": 1, "is_for_deal": 1, "zendesk_lead_id": 2601247, "zendesk_deal_id": 13997415},
+      {"name": "Recomendacion", "is_for_lead": 1, "is_for_deal": 1, "zendesk_lead_id": 2601248, "zendesk_deal_id": 14006754},
+      {"name": "Redes sociales", "is_for_lead": 1, "is_for_deal": 1, "zendesk_lead_id": 2601249, "zendesk_deal_id": 8863522},
+      {"name": "Google", "is_for_lead": 1, "is_for_deal": 0, "zendesk_lead_id": 2601250, "_note": "ANUNCIO GOOGLE ADS en deals es separado"},
+      {"name": "Pagada", "is_for_lead": 1, "is_for_deal": 1, "zendesk_lead_id": 2601805, "zendesk_deal_id": 14005773},
+      {"name": "Email", "is_for_lead": 1, "is_for_deal": 1, "zendesk_lead_id": 2601826, "zendesk_deal_id": 14005809},
+      {"name": "Consulta Médica", "is_for_lead": 1, "is_for_deal": 1, "zendesk_lead_id": 2601827, "zendesk_deal_id": 14009643},
+      {"name": "Sell Lead Capture Form", "is_for_lead": 1, "is_for_deal": 1, "zendesk_lead_id": 2603509, "zendesk_deal_id": 14024986},
+      {"name": "clinyco_AI", "is_for_lead": 1, "is_for_deal": 0, "zendesk_lead_id": 2652897, "_note": "AI conversacional como source"},
+      {"name": "CLINYCO.CL", "is_for_lead": 0, "is_for_deal": 1, "zendesk_deal_id": 8806558, "_note": "tráfico desde clinyco.cl"},
+      {"name": "Word of mouth", "is_for_lead": 0, "is_for_deal": 1, "zendesk_deal_id": 8806559},
+      {"name": "Referral", "is_for_lead": 0, "is_for_deal": 1, "zendesk_deal_id": 8806560},
+      {"name": "BUPA", "is_for_lead": 0, "is_for_deal": 1, "zendesk_deal_id": 13997416},
+      {"name": "ANUNCIO GOOGLE ADS", "is_for_lead": 0, "is_for_deal": 1, "zendesk_deal_id": 13997417},
+      {"name": "MEDICO", "is_for_lead": 0, "is_for_deal": 1, "zendesk_deal_id": 13997418, "_note": "el espacio final está en Zendesk, lo limpiamos"},
+      {"name": "OTRO", "is_for_lead": 0, "is_for_deal": 1, "zendesk_deal_id": 13997419},
+      {"name": "URL", "is_for_lead": 0, "is_for_deal": 1, "zendesk_deal_id": 14253283},
+      {"name": "XQ", "is_for_lead": 0, "is_for_deal": 1, "zendesk_deal_id": 14823312, "_note": "uso interno desconocido — preservar"}
+    ]
+  },
+
+  "lead_statuses": {
+    "_doctype_target": "CRM Lead Status",
+    "_strategy": "Reemplazar los 7 defaults Frappe con flujo Clinyco. Lead = paciente sin cita aún (pre-deal).",
+    "_delete_defaults": ["New", "Contacted", "Nurture", "Qualified", "Converted", "Unqualified", "Junk"],
+    "items": [
+      {"name": "Nuevo", "color": "gray", "position": 1, "_description": "Lead recién entró (Antonia/landbot/imports)"},
+      {"name": "Calificando", "color": "blue", "position": 2, "_description": "Antonia conversando, recolectando datos"},
+      {"name": "Calificado", "color": "purple", "position": 3, "_description": "Datos completos, listo para citar"},
+      {"name": "Convertido", "color": "green", "position": 4, "_description": "Se agendó cita → pasó a Deal"},
+      {"name": "Descalificado", "color": "red", "position": 5, "_description": "No cumple requisitos"},
+      {"name": "Sin Respuesta", "color": "orange", "position": 6, "_description": "Antonia intentó N veces sin respuesta"},
+      {"name": "Junk", "color": "darkgray", "position": 7, "_description": "Spam / no real"}
+    ]
+  },
+
+  "deal_statuses": {
+    "_doctype_target": "CRM Deal Status",
+    "_strategy": "Statuses cross-pipeline, agnósticos al pipeline. El pipeline se trackea en custom field 'pipeline'. Mapeo desde 30 stages Zendesk a 8 canonical.",
+    "_delete_defaults": ["Qualification", "Demo/Making", "Proposal/Quotation", "Negotiation", "Ready to Close", "Won", "Lost"],
+    "items": [
+      {
+        "name": "Candidato",
+        "color": "gray",
+        "position": 1,
+        "_zendesk_mapping": ["CANDIDATO", "CANDIDATOS"]
+      },
+      {
+        "name": "Examenes Solicitados",
+        "color": "lightblue",
+        "position": 2,
+        "_zendesk_mapping": ["EXAMENES PRE-PAD ENVIADOS", "EXAMENES ALLURION", "EXAMENES ORBERA", "ORDEN DE EXAMENES"]
+      },
+      {
+        "name": "Examenes Recibidos",
+        "color": "blue",
+        "position": 3,
+        "_zendesk_mapping": ["EXAMENES ENVIADOS"],
+        "_note": "Solo aplica a pipeline Bariátrica (los otros van directo a Pre-Op)"
+      },
+      {
+        "name": "Pre-Operatorio",
+        "color": "yellow",
+        "position": 4,
+        "_zendesk_mapping": ["PROCESO PREOP", "PROCESO PRE-OPERATORIO", "CONTROLES PRE-INSTALACIÓN"]
+      },
+      {
+        "name": "Cerrado Agendado",
+        "color": "orange",
+        "position": 5,
+        "_zendesk_mapping": ["CERRADO AGENDADO"]
+      },
+      {
+        "name": "Cerrado Operado",
+        "color": "green",
+        "position": 6,
+        "_zendesk_mapping": ["CERRADO OPERADO", "CERRADO INSTALADO"],
+        "_terminal": true,
+        "_won": true
+      },
+      {
+        "name": "Suspendido",
+        "color": "darkgray",
+        "position": 7,
+        "_zendesk_mapping": ["SUSPENDIDO", "DESCALIFICADO"],
+        "_terminal": true,
+        "_unqualified": true
+      },
+      {
+        "name": "Sin Respuesta",
+        "color": "red",
+        "position": 8,
+        "_zendesk_mapping": ["SIN RESPUESTA"],
+        "_terminal": true,
+        "_lost": true
+      }
+    ]
+  },
+
+  "custom_fields": {
+    "_strategy": "Consolidar duplicados Zendesk (Edad #1-#5 → 1, Estatura ×7 → 1, Previsión x4 → 1, etc.). Migration script lee TODAS las versiones del custom_fields slot Zendesk y toma el valor más reciente no-vacío.",
+    "_total_targets": 86,
+
+    "CRM Lead Source": [
+      {"fieldname": "is_for_lead", "fieldtype": "Check", "label": "Aplica a Lead", "default": "1"},
+      {"fieldname": "is_for_deal", "fieldtype": "Check", "label": "Aplica a Deal", "default": "0"}
+    ],
+
+    "CRM Lead": [
+      {"fieldname": "rut", "fieldtype": "Data", "label": "RUT", "in_list_view": 1, "in_standard_filter": 1, "description": "RUT chileno con formato XX.XXX.XXX-X o X-K"},
+      {"fieldname": "rut_normalizado", "fieldtype": "Data", "label": "RUT Normalizado", "read_only": 1, "description": "Auto-calculado por server script (módulo 11). Usado por Medinet."},
+      {"fieldname": "edad", "fieldtype": "Int", "label": "Edad", "in_list_view": 1},
+      {"fieldname": "fecha_nacimiento", "fieldtype": "Date", "label": "Fecha Nacimiento"},
+      {"fieldname": "peso_kg", "fieldtype": "Float", "label": "Peso (kg)", "precision": 1},
+      {"fieldname": "estatura_m", "fieldtype": "Float", "label": "Estatura (m)", "precision": 2},
+      {"fieldname": "imc", "fieldtype": "Float", "label": "IMC", "read_only": 1, "precision": 2, "description": "Auto-calculado por server script: peso / estatura²"},
+      {"fieldname": "tabaco", "fieldtype": "Select", "label": "Tabaco", "options": "\nNo\nSí\nEx-fumador"},
+      {"fieldname": "prevision", "fieldtype": "Select", "label": "Previsión", "options": "\nFONASA\nISAPRE\nParticular\nSin previsión\nDIPRECA\nCAPREDENA\nFFAA"},
+      {"fieldname": "interes", "fieldtype": "Data", "label": "Interés (procedimiento)", "description": "Drive del pipeline_id en clinyco_AI"},
+      {"fieldname": "enfermedades_cronicas", "fieldtype": "Small Text", "label": "Enfermedades Crónicas"}
+    ],
+
+    "Contact": [
+      {"_section": "Identidad chilena"},
+      {"fieldname": "rut", "fieldtype": "Data", "label": "RUT", "in_list_view": 1, "in_standard_filter": 1, "_zendesk_sources": ["RUT o ID", "RUT o ID#1"]},
+      {"fieldname": "rut_normalizado", "fieldtype": "Data", "label": "RUT Normalizado", "read_only": 1, "_zendesk_sources": ["RUT_normalizado", "RUT_normalizado#1"], "_critical": "Medinet busca por este field"},
+      {"fieldname": "edad", "fieldtype": "Int", "label": "Edad", "_zendesk_sources": ["Edad", "Edad #1", "#2", "#3", "#4", "#5"]},
+      {"fieldname": "fecha_nacimiento", "fieldtype": "Date", "label": "Fecha Nacimiento", "_zendesk_sources": ["Fecha Nacimiento", "Fecha Nacimiento#1"]},
+
+      {"_section": "Antropométricos"},
+      {"fieldname": "peso_kg", "fieldtype": "Float", "label": "Peso (kg)", "precision": 1, "_zendesk_sources": ["Peso", "Peso #1-4", "Peso#1"]},
+      {"fieldname": "estatura_m", "fieldtype": "Float", "label": "Estatura (m)", "precision": 2, "_zendesk_sources": ["Estatura", "Estatura #1-5", "Estatura#1"], "_migration_logic": "Si Zendesk valor > 10 → cm, dividir por 100. Si ≤ 10 → ya en metros."},
+      {"fieldname": "imc", "fieldtype": "Float", "label": "IMC", "read_only": 1, "precision": 2, "_zendesk_sources": ["IMC", "IMC#1", "Imc #1-5"], "_critical": "Lead scoring +25 pts"},
+
+      {"_section": "Médico"},
+      {"fieldname": "tabaco", "fieldtype": "Select", "label": "Tabaco", "options": "\nNo\nSí\nEx-fumador", "_zendesk_sources": ["Tabaco"]},
+      {"fieldname": "enfermedades_cronicas", "fieldtype": "Small Text", "label": "Enfermedades Crónicas", "_zendesk_sources": ["Enfermedades cronicas"]},
+      {"fieldname": "cirugias_previas", "fieldtype": "Table MultiSelect", "label": "Cirugías Previas", "options": "Cirugia Previa Item", "_zendesk_sources": ["Cirugías Previas"], "_note": "Requires creating 'Cirugia Previa Item' DocType (catálogo)"},
+
+      {"_section": "Insurance"},
+      {"fieldname": "prevision", "fieldtype": "Select", "label": "Previsión", "options": "\nFONASA\nISAPRE\nParticular\nSin previsión\nDIPRECA\nCAPREDENA\nFFAA", "_zendesk_sources": ["Previsión", "Previsión##", "Previsión#1", "Previsión###1"], "_critical": "FONASA PAD eligibility"},
+      {"fieldname": "tramo_modalidad", "fieldtype": "Select", "label": "Tramo / Modalidad", "options": "\nTramo A\nTramo B\nTramo C\nTramo D\nMLE\nMAI\nLibre Elección\nNo aplica", "_zendesk_sources": ["Tramo/Modalidad"], "_critical": "Antonia detecta esto desde WhatsApp → +5 score si Tramo C/D PAD"},
+
+      {"_section": "Contacto adicional"},
+      {"fieldname": "ciudad", "fieldtype": "Data", "label": "Ciudad", "_zendesk_sources": ["Ciudad", "Ciudad#1", "City#1", "City#2"]},
+
+      {"_section": "Internal"},
+      {"fieldname": "agente", "fieldtype": "Link", "label": "Agente Asignado", "options": "User", "_zendesk_sources": ["AGENTE"]},
+      {"fieldname": "interes", "fieldtype": "Data", "label": "Interés (procedimiento)", "_zendesk_sources": ["Interés #1"]},
+      {"fieldname": "fecha_ingresa_formulario", "fieldtype": "Datetime", "label": "Fecha Ingresa Formulario", "_zendesk_sources": ["Fecha Ingresa Formulario", "Fecha Ingresa Formulario#1", "Fecha ingresa formulario #1-5"]},
+      {"fieldname": "etiquetas", "fieldtype": "Data", "label": "Etiquetas (legacy)", "description": "Multi-select Zendesk Etiquetas — migrar a Frappe Tags built-in", "_zendesk_sources": ["Etiquetas"], "_note": "Idealmente usar Frappe Tag system en lugar de campo plano"},
+      {"fieldname": "name_alternativo", "fieldtype": "Data", "label": "Nombre Alternativo", "_zendesk_sources": ["Name#1"], "_note": "alias del paciente"}
+    ],
+
+    "CRM Deal": [
+      {"_section": "Pipeline (cross-cutting)"},
+      {"fieldname": "pipeline", "fieldtype": "Select", "label": "Pipeline", "options": "Bariátrica\nBalón\nPlástica\nGeneral", "in_list_view": 1, "in_standard_filter": 1, "reqd": 1, "_zendesk_mapping": "Inferido desde pipeline_id Zendesk: 1290779→Bariátrica, 4823817→Balón, 4959507→Plástica, 5049979→General"},
+
+      {"_section": "Identidad (replicada de Contact via fetch_from)"},
+      {"fieldname": "rut", "fieldtype": "Data", "label": "RUT", "fetch_from": "contact.rut", "in_list_view": 1, "_zendesk_sources": ["RUT o ID", "RUT O ID"]},
+      {"fieldname": "rut_normalizado", "fieldtype": "Data", "label": "RUT Normalizado", "fetch_from": "contact.rut_normalizado", "read_only": 1, "_zendesk_sources": ["RUT_normalizado"]},
+      {"fieldname": "edad", "fieldtype": "Int", "label": "Edad", "fetch_from": "contact.edad", "_zendesk_sources": ["EDAD"]},
+      {"fieldname": "fecha_nacimiento", "fieldtype": "Date", "label": "Fecha Nacimiento", "fetch_from": "contact.fecha_nacimiento", "_zendesk_sources": ["Fecha Nacimiento", "Fecha de nacimiento"]},
+
+      {"_section": "Antropométricos (replicados)"},
+      {"fieldname": "peso_kg", "fieldtype": "Float", "label": "Peso (kg)", "fetch_from": "contact.peso_kg", "precision": 1, "_zendesk_sources": ["Peso"]},
+      {"fieldname": "estatura_m", "fieldtype": "Float", "label": "Estatura (m)", "fetch_from": "contact.estatura_m", "precision": 2, "_zendesk_sources": ["Estatura", "PESO (metros)"], "_migration_logic": "PESO (metros) field name es confuso — es altura en metros. Si Estatura > 10 → /100. Sino → as-is."},
+      {"fieldname": "imc", "fieldtype": "Float", "label": "IMC", "fetch_from": "contact.imc", "read_only": 1, "precision": 2},
+
+      {"_section": "Insurance (replicada)"},
+      {"fieldname": "prevision", "fieldtype": "Select", "label": "Previsión", "options": "\nFONASA\nISAPRE\nParticular\nSin previsión\nDIPRECA\nCAPREDENA\nFFAA", "fetch_from": "contact.prevision", "_zendesk_sources": ["previsión", "Previsión", "PREVISION", "Prevision"]},
+      {"fieldname": "tramo_modalidad", "fieldtype": "Select", "label": "Tramo / Modalidad", "options": "\nTramo A\nTramo B\nTramo C\nTramo D\nMLE\nMAI\nLibre Elección\nNo aplica", "fetch_from": "contact.tramo_modalidad", "_zendesk_sources": ["Tramo/Modalidad"]},
+      {"fieldname": "validacion_pad", "fieldtype": "Select", "label": "Validación PAD", "options": "\nPosible evaluación PAD Fonasa\nNo aplica PAD Fonasa por Tramo A\nValidado\nNo validado\nPendiente", "_zendesk_sources": ["Validacion PAD"], "_note": "Antonia escribe esto"},
+
+      {"_section": "Médico"},
+      {"fieldname": "cirugias_previas", "fieldtype": "Table MultiSelect", "label": "Cirugías Previas", "options": "Cirugia Previa Item", "_zendesk_sources": ["CIRUGIAS PREVIAS", "Cirugías Previas"]},
+      {"fieldname": "colelitiasis", "fieldtype": "Select", "label": "Colelitiasis", "options": "\nSí\nNo\nDesconocido", "_zendesk_sources": ["COLELITIASIS"]},
+      {"fieldname": "biopsia_pendiente", "fieldtype": "Select", "label": "Biopsia Pendiente", "options": "\nSí\nNo\nN/A", "_zendesk_sources": ["BIOPSIA PENDIENTE"]},
+      {"fieldname": "interes", "fieldtype": "Data", "label": "Interés (procedimiento)", "_zendesk_sources": ["Interés"], "_critical": "Driver del pipeline en clinyco_AI"},
+
+      {"_section": "Cirugía"},
+      {"fieldname": "cirugia_procedimiento", "fieldtype": "Data", "label": "Cirugía / Procedimiento", "_zendesk_sources": ["CIRUGIA / PROCEDIMIENTO"], "_note": "17 choices originales — exponer como Select tras revisar valores reales"},
+      {"fieldname": "cirugia_bariatrica_legacy", "fieldtype": "Data", "label": "Cirugía Bariátrica (legacy)", "_zendesk_sources": ["CIRUGIABARIATRICA"], "_note": "Mantener para no perder data histórica"},
+      {"fieldname": "cirujano_principal", "fieldtype": "Data", "label": "Cirujano Principal", "_zendesk_sources": ["CIRUJANO BARIÁTRICO", "CIRUJANO PLASTICO", "CIRUJANO GENERAL", "CIRUJANO DE BALON"], "_migration_logic": "Tomar el cirujano del pipeline correspondiente"},
+      {"fieldname": "cirujano_2", "fieldtype": "Data", "label": "2do Cirujano", "_zendesk_sources": ["2DO CIRUJANO"]},
+      {"fieldname": "cirujano_3", "fieldtype": "Data", "label": "3er Cirujano", "_zendesk_sources": ["3ER CIRUJANO"]},
+      {"fieldname": "anestesista", "fieldtype": "Data", "label": "Anestesista", "_zendesk_sources": ["ANESTESISTA"]},
+      {"fieldname": "arsenalera", "fieldtype": "Data", "label": "Arsenalera", "_zendesk_sources": ["ARSENALERA"]},
+      {"fieldname": "sucursal", "fieldtype": "Select", "label": "Sucursal", "options": "\nCentro Médico Clínyco\nClínica Asociada\nOtra", "_zendesk_sources": ["SUCURSAL"], "_note": "3 choices originales — verificar valores reales"},
+      {"fieldname": "fecha_solicitud_pabellon", "fieldtype": "Date", "label": "Fecha Solicitud Pabellón", "_zendesk_sources": ["FECHA SOLICITUD DE PABELLON"]},
+      {"fieldname": "fecha_cirugia", "fieldtype": "Date", "label": "Fecha de Cirugía", "_zendesk_sources": ["FECHA DE CIRUGÍA"], "_bug_note": "ZAP update-comisiones lo escribe '' cada update — sell-service satellite debe ignorar PUT con ''"},
+      {"fieldname": "programa_medico_entregado", "fieldtype": "Check", "label": "Programa Médico Entregado", "_zendesk_sources": ["PROGRAMA MÉDICO ENTREGADO"]},
+      {"fieldname": "documentacion_ingreso", "fieldtype": "Check", "label": "Documentación de Ingreso", "_zendesk_sources": ["DOCUMENTACIÓN DE INGRESO"]},
+      {"fieldname": "honorarios", "fieldtype": "Currency", "label": "Honorarios", "_zendesk_sources": ["HONORARIOS"]},
+
+      {"_section": "Hitos (process tracking)"},
+      {"fieldname": "fecha_legacy", "fieldtype": "Datetime", "label": "Fecha (legacy)", "_zendesk_sources": ["fecha"], "_note": "Datetime original Zendesk — agregado el deal"},
+      {"fieldname": "fecha_ingresa_formulario", "fieldtype": "Datetime", "label": "Fecha Ingresa Formulario", "_zendesk_sources": ["Fecha Ingresa Formulario"]},
+      {"fieldname": "fecha_hito_1", "fieldtype": "Date", "label": "Fecha Hito 1 (agregado)", "_zendesk_sources": ["*Fecha Hito 1* (agregado el)", "fecha"], "_migration_logic": "Tomar el campo más viejo poblado (fecha o Fecha Hito 1)"},
+      {"fieldname": "fecha_hito_2", "fieldtype": "Date", "label": "Fecha Hito 2 (atención profesional)", "_zendesk_sources": ["* Fecha Hito 2* (Atención profesional)"]},
+      {"fieldname": "diff_cirugia_hito2", "fieldtype": "Int", "label": "Días Cirugía − Hito 2", "read_only": 1, "_zendesk_sources": ["DIFF F.CIRUGIA-HITO2"], "_server_script_calculated": true},
+
+      {"_section": "External URLs"},
+      {"fieldname": "url_examenes", "fieldtype": "Data", "label": "URL Exámenes", "_zendesk_sources": ["URL-EXAMENES"]},
+      {"fieldname": "url_medinet", "fieldtype": "Data", "label": "URL Medinet", "_zendesk_sources": ["URL-MEDINET"]},
+      {"fieldname": "whatsapp_contactar_link", "fieldtype": "Data", "label": "WhatsApp Contacto", "_zendesk_sources": ["WhatsApp_Contactar_LINK"], "_server_script_calculated": "wa.me/{digits} desde phone"},
+
+      {"_section": "Comisiones y Colaboradores (child tables)"},
+      {"fieldname": "comisiones", "fieldtype": "Table", "label": "Comisiones", "options": "Clinyco Comision", "_consolidates": ["ComisionBAR1", "ComisionBAR2", "ComisionBAR3", "ComisionBAR4", "ComisionBAR5", "ComisionBAR6"]},
+      {"fieldname": "colaboradores", "fieldtype": "Table", "label": "Colaboradores", "options": "Clinyco Colaborador", "_consolidates": ["Colaborador 1-3 (BAR)", "Colaborador 1-2 (PLASTICA)", "Colaborador 1-2 (GENERAL)", "Colaborador 1. (BALON)", "Colaborador 2 (BALON)"]},
+
+      {"_section": "Other"},
+      {"fieldname": "numero_familia_paciente", "fieldtype": "Data", "label": "Teléfono Familiar", "_zendesk_sources": ["Numero familia paciente"]},
+      {"fieldname": "observacion", "fieldtype": "Small Text", "label": "Observación", "_zendesk_sources": ["OBSERVACIÓN"]}
+    ]
+  },
+
+  "child_doctypes": {
+    "Clinyco Comision": {
+      "istable": 1,
+      "module": "Custom",
+      "_purpose": "Child de CRM Deal. Consolida ComisionBAR1-6 de Zendesk.",
+      "fields": [
+        {"fieldname": "codigo", "fieldtype": "Data", "label": "Código", "in_list_view": 1, "_note": "Códigos hardcoded ZAP: 8001, 5002, 5003, 5004, 5005, 6006"},
+        {"fieldname": "monto", "fieldtype": "Currency", "label": "Monto", "in_list_view": 1},
+        {"fieldname": "fecha_pago", "fieldtype": "Date", "label": "Fecha Pago", "in_list_view": 1},
+        {"fieldname": "colaborador", "fieldtype": "Data", "label": "Colaborador"},
+        {"fieldname": "pagada", "fieldtype": "Check", "label": "Pagada", "in_list_view": 1},
+        {"fieldname": "observacion", "fieldtype": "Small Text", "label": "Observación"}
+      ]
+    },
+    "Clinyco Colaborador": {
+      "istable": 1,
+      "module": "Custom",
+      "_purpose": "Child de CRM Deal. Consolida Colaborador 1-3 por pipeline.",
+      "fields": [
+        {"fieldname": "pipeline", "fieldtype": "Select", "label": "Pipeline", "options": "Bariátrica\nBalón\nPlástica\nGeneral", "in_list_view": 1},
+        {"fieldname": "posicion", "fieldtype": "Int", "label": "Posición", "in_list_view": 1, "_note": "1, 2 o 3"},
+        {"fieldname": "colaborador", "fieldtype": "Link", "label": "Colaborador", "options": "User", "in_list_view": 1},
+        {"fieldname": "rol", "fieldtype": "Data", "label": "Rol", "_note": "Cirujano, asesor, asistente, etc."}
+      ]
+    },
+    "Cirugia Previa Item": {
+      "istable": 1,
+      "module": "Custom",
+      "_purpose": "Child de Contact + CRM Deal. Catálogo de cirugías previas multi-select.",
+      "fields": [
+        {"fieldname": "cirugia", "fieldtype": "Data", "label": "Cirugía", "in_list_view": 1, "reqd": 1},
+        {"fieldname": "fecha", "fieldtype": "Date", "label": "Fecha (aproximada)"},
+        {"fieldname": "observacion", "fieldtype": "Small Text", "label": "Observación"}
+      ]
+    }
+  },
+
+  "server_scripts": [
+    {
+      "name": "rut_normalizado_contact",
+      "doctype_event": "Contact",
+      "trigger": "before_save",
+      "description": "Calcular rut_normalizado desde rut (algoritmo Chile módulo 11)",
+      "code": "import re\nif doc.rut:\n    raw = re.sub(r'[^0-9Kk]', '', str(doc.rut)).upper()\n    if len(raw) >= 2:\n        doc.rut_normalizado = raw"
+    },
+    {
+      "name": "rut_normalizado_deal",
+      "doctype_event": "CRM Deal",
+      "trigger": "before_save",
+      "description": "Idem para CRM Deal (campos canonical iguales)",
+      "code": "import re\nif doc.rut:\n    raw = re.sub(r'[^0-9Kk]', '', str(doc.rut)).upper()\n    if len(raw) >= 2:\n        doc.rut_normalizado = raw"
+    },
+    {
+      "name": "imc_calc_contact",
+      "doctype_event": "Contact",
+      "trigger": "before_save",
+      "description": "Calcular IMC desde peso_kg y estatura_m",
+      "code": "if doc.peso_kg and doc.estatura_m and float(doc.estatura_m) > 0:\n    doc.imc = round(float(doc.peso_kg) / (float(doc.estatura_m) ** 2), 2)"
+    },
+    {
+      "name": "imc_calc_deal",
+      "doctype_event": "CRM Deal",
+      "trigger": "before_save",
+      "description": "Idem para Deal",
+      "code": "if doc.peso_kg and doc.estatura_m and float(doc.estatura_m) > 0:\n    doc.imc = round(float(doc.peso_kg) / (float(doc.estatura_m) ** 2), 2)"
+    },
+    {
+      "name": "diff_dias_deal",
+      "doctype_event": "CRM Deal",
+      "trigger": "before_save",
+      "description": "Calcular diff_cirugia_hito2 (días entre fecha_cirugia y fecha_hito_2)",
+      "code": "from frappe.utils import date_diff\nif doc.fecha_cirugia and doc.fecha_hito_2:\n    doc.diff_cirugia_hito2 = date_diff(doc.fecha_cirugia, doc.fecha_hito_2)"
+    },
+    {
+      "name": "whatsapp_link_deal",
+      "doctype_event": "CRM Deal",
+      "trigger": "before_save",
+      "description": "Generar wa.me/{digits} desde phone (mantiene compatibilidad con ZAP update-comisiones)",
+      "code": "import re\nif doc.phone:\n    digits = re.sub(r'\\D', '', str(doc.phone))\n    if digits:\n        doc.whatsapp_contactar_link = f'https://wa.me/{digits}'"
+    }
+  ],
+
+  "_apply_order": [
+    "1. delete_defaults: lead_sources, lead_statuses, deal_statuses",
+    "2. create child_doctypes: Cirugia Previa Item, Clinyco Comision, Clinyco Colaborador",
+    "3. create custom_fields on CRM Lead Source (is_for_lead, is_for_deal)",
+    "4. create lead_sources items (con is_for_lead/is_for_deal flags)",
+    "5. create lead_statuses items",
+    "6. create deal_statuses items",
+    "7. create custom_fields on Contact (orden importante: Tabla MultiSelect después que child doctype exista)",
+    "8. create custom_fields on CRM Lead",
+    "9. create custom_fields on CRM Deal (incluye fetch_from a Contact, requiere que Contact ya tenga los fields)",
+    "10. create server_scripts (apply los 6)",
+    "11. validate: hacer un Lead/Deal/Contact de prueba con todos los campos"
+  ]
+}
