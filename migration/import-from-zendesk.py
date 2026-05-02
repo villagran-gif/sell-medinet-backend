@@ -631,6 +631,12 @@ def translate_lead(z_lead):
             d = parse_date(v)
             if d:
                 f[f_field] = d
+        elif f_field == "tabaco":
+            tv = clean_str(v) or ""
+            mapped = "Sí" if tv.lower() in ("si", "sí", "yes", "true", "1") else ("No" if tv.lower() in ("no", "false", "0") else tv)
+            f[f_field] = normalize_select(mapped, VALID_TABACO)
+        elif f_field == "prevision":
+            f[f_field] = normalize_select(clean_str(v), VALID_PREVISION, PREVISION_ALIASES)
         else:
             f[f_field] = clean_str(v)
 
