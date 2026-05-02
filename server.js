@@ -2,6 +2,7 @@ import express from "express";
 import { randomUUID } from "crypto";
 import { createSupportRouter } from "./support-service/index.js";
 import { createChatwootWebhookRouter } from "./chatwoot-webhook/index.js";
+import { createSellRouter } from "./sell-service/index.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,6 +33,19 @@ if (process.env.SUPPORT_ENABLED === "true") {
 // Receptor de eventos de Chatwoot. Persiste raw payloads en chatwoot.raw_events.
 // Ver chatwoot-webhook/README.md.
 // ======================
+// ======================
+// sell-service (opt-in vía SELL_SERVICE_ENABLED=true)
+// Satellite que emula Zendesk Sell API v2 hacia Frappe Cloud REST.
+// Permite migrar gradualmente los 12+ surfaces de Clínyco que llaman a
+// api.getbase.com sin reescribirlos. Ver sell-service/README.md.
+// ======================
+if (process.env.SELL_SERVICE_ENABLED === "true") {
+  app.use("/sell", createSellRouter());
+  console.log("[sell-service] mounted at /sell");
+} else {
+  console.log("[sell-service] disabled (set SELL_SERVICE_ENABLED=true to enable)");
+}
+
 if (process.env.CHATWOOT_WEBHOOK_ENABLED === "true") {
   app.use(
     "/chatwoot-webhook",
