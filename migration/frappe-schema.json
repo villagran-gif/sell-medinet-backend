@@ -161,11 +161,11 @@
     },
 
     "validacion_pad": {
-      "options": "OK\nPENDIENTE",
-      "_total": 2,
+      "options": "OK\nNO APLICA\nPENDIENTE",
+      "_total": 3,
       "_zendesk_field_id": 2760712,
-      "_unified_from_zendesk": "5 → 2 (decisión humana). Migration: 'SI'→'OK', 'PENDIENTE'→'PENDIENTE', 'NO'→'PENDIENTE', strings Antonia ('Posible evaluación...', 'No aplica...') → 'PENDIENTE'.",
-      "_note": "Antonia debe actualizar lógica para escribir solo 'OK' o 'PENDIENTE'"
+      "_unified_from_zendesk": "5 → 3 (decisión humana 7). Migration mapping: SI→OK, NO→NO APLICA, PENDIENTE→PENDIENTE, 'Posible evaluación PAD Fonasa'→PENDIENTE, 'No aplica PAD Fonasa por Tramo A'→NO APLICA",
+      "_semantica": "OK = validado y califica para subsidio PAD. NO APLICA = validado y no califica (ej: Tramo A). PENDIENTE = aún sin validar. Antonia distingue estos 3 estados para flujo operativo."
     },
 
     "programa_medico_entregado": {
