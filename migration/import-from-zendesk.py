@@ -253,18 +253,39 @@ zendesk_rl = RateLimiter(ZENDESK_RPS)
 frappe_rl = RateLimiter(FRAPPE_RPS)
 
 
-def http(method, url, headers=None, body=None, timeout=30):
+def http(method, url, headers=None, body=None, timeout=30, max_retries=4):
+    """HTTP con retry exponencial para errores de red (timeout, connection reset, 5xx)."""
     data = json.dumps(body).encode() if body else None
-    req = urllib.request.Request(url, data=data, method=method, headers=headers or {})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.status, json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        body_text = e.read().decode("utf-8", errors="replace")
+
+    last_err = None
+    for attempt in range(max_retries):
+        req = urllib.request.Request(url, data=data, method=method, headers=headers or {})
         try:
-            return e.code, json.loads(body_text)
-        except json.JSONDecodeError:
-            return e.code, {"_raw": body_text[:300]}
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            body_text = e.read().decode("utf-8", errors="replace")
+            # 5xx → retry; 4xx → bubble up immediately
+            if e.code >= 500 and attempt < max_retries - 1:
+                last_err = e
+                wait = 2 ** attempt
+                print(f"    [retry {attempt+1}/{max_retries}] HTTP {e.code}, waiting {wait}s", file=sys.stderr)
+                time.sleep(wait)
+                continue
+            try:
+                return e.code, json.loads(body_text)
+            except json.JSONDecodeError:
+                return e.code, {"_raw": body_text[:300]}
+        except (TimeoutError, urllib.error.URLError, ConnectionError) as e:
+            last_err = e
+            if attempt < max_retries - 1:
+                wait = 2 ** attempt
+                print(f"    [retry {attempt+1}/{max_retries}] {type(e).__name__}, waiting {wait}s", file=sys.stderr)
+                time.sleep(wait)
+                continue
+            # Out of retries — return synthetic error
+            return 599, {"_raw": f"network: {type(e).__name__}: {str(e)[:100]}"}
+    return 599, {"_raw": f"exhausted retries: {last_err}"}
 
 
 def zendesk_get(path):
