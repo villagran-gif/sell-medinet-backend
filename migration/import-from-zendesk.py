@@ -361,6 +361,31 @@ def clean_str(v):
     return str(v).strip().replace("\t", " ").replace("\r", "").strip() or None
 
 
+def normalize_phone(v):
+    """Limpia teléfono: strip 'TELEFONO:' prefix, unicode ± → +, valida formato.
+    Returns formatted phone or None if invalid."""
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+    # Strip common prefixes
+    import re
+    s = re.sub(r"^(TELEFONO|TEL|TELÉFONO|FONO|MOVIL|CELULAR|PHONE):\s*", "", s, flags=re.IGNORECASE)
+    # Replace unicode ± and similar to +
+    s = s.replace("±", "+").replace("‪", "").replace("‬", "")
+    # Reject if looks like email
+    if "@" in s:
+        return None
+    # Keep only digits, +, spaces, dashes, parens
+    s = re.sub(r"[^\d+\-\s\(\)]", "", s).strip()
+    # Must have at least 7 digits
+    digits = re.sub(r"\D", "", s)
+    if len(digits) < 7:
+        return None
+    return s
+
+
 def to_int(v):
     if v is None or v == "":
         return None
@@ -397,11 +422,16 @@ def translate_contact(z_contact):
     if z_contact.get("last_name"):
         f["last_name"] = z_contact["last_name"]
     if z_contact.get("email"):
-        f["email_ids"] = [{"email_id": z_contact["email"], "is_primary": 1}]
-    if z_contact.get("phone"):
-        f["phone_nos"] = [{"phone": z_contact["phone"], "is_primary_phone": 1}]
-    if z_contact.get("mobile"):
-        f.setdefault("phone_nos", []).append({"phone": z_contact["mobile"], "is_primary_mobile_no": 1})
+        # Validate email format minimally
+        em = clean_str(z_contact["email"])
+        if em and "@" in em:
+            f["email_ids"] = [{"email_id": em, "is_primary": 1}]
+    p = normalize_phone(z_contact.get("phone"))
+    if p:
+        f["phone_nos"] = [{"phone": p, "is_primary_phone": 1}]
+    m = normalize_phone(z_contact.get("mobile"))
+    if m:
+        f.setdefault("phone_nos", []).append({"phone": m, "is_primary_mobile_no": 1})
 
     cf = z_contact.get("custom_fields") or {}
     for z_key, f_field in CONTACT_TO_FRAPPE.items():
@@ -549,12 +579,15 @@ def translate_lead(z_lead):
         f["first_name"] = z_lead["first_name"]
     if z_lead.get("last_name"):
         f["last_name"] = z_lead["last_name"]
-    if z_lead.get("email"):
-        f["email"] = z_lead["email"]
-    if z_lead.get("phone"):
-        f["phone"] = z_lead["phone"]
-    if z_lead.get("mobile"):
-        f["mobile_no"] = z_lead["mobile"]
+    em = clean_str(z_lead.get("email"))
+    if em and "@" in em:
+        f["email"] = em
+    p = normalize_phone(z_lead.get("phone"))
+    if p:
+        f["phone"] = p
+    m = normalize_phone(z_lead.get("mobile"))
+    if m:
+        f["mobile_no"] = m
     if z_lead.get("organization_name"):
         f["organization_name"] = z_lead["organization_name"]
     if z_lead.get("title"):
