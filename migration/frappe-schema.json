@@ -325,6 +325,28 @@
   },
 
   "child_doctypes": {
+    "Clinyco Comision Codigo Catalogo": {
+      "istable": 0,
+      "module": "Custom",
+      "_purpose": "Catálogo de códigos de comisión Clínyco. Reemplaza el Select hardcoded (8001/5002/5003/9004/6005/6006).",
+      "_decision_8_basis": "Mismo patrón que Clinyco Colaborador Catalogo — un Link a catálogo en lugar de Select rígido.",
+      "autoname": "field:codigo",
+      "fields": [
+        {"fieldname": "codigo", "fieldtype": "Data", "label": "Código", "in_list_view": 1, "reqd": 1, "unique": 1},
+        {"fieldname": "descripcion", "fieldtype": "Data", "label": "Descripción", "in_list_view": 1},
+        {"fieldname": "monto_default", "fieldtype": "Currency", "label": "Monto Default"},
+        {"fieldname": "activo", "fieldtype": "Check", "label": "Activo", "default": "1", "in_list_view": 1}
+      ],
+      "initial_data": [
+        {"codigo": "8001", "descripcion": "Comisión BAR posición 1"},
+        {"codigo": "5002", "descripcion": "Comisión BAR posición 2"},
+        {"codigo": "5003", "descripcion": "Comisión BAR posición 3"},
+        {"codigo": "9004", "descripcion": "Comisión BAR posición 4"},
+        {"codigo": "6005", "descripcion": "Comisión BAR posición 5"},
+        {"codigo": "6006", "descripcion": "Comisión BAR posición 6"}
+      ]
+    },
+
     "Clinyco Colaborador Catalogo": {
       "istable": 0,
       "module": "Custom",
@@ -354,8 +376,9 @@
       "istable": 1,
       "module": "Custom",
       "_purpose": "Child de CRM Deal. Consolida ComisionBAR1-6 de Zendesk.",
+      "_decision_8": "codigo cambiado de Select hardcoded a Link → Clinyco Comision Codigo Catalogo",
       "fields": [
-        {"fieldname": "codigo", "fieldtype": "Select", "label": "Código", "in_list_view": 1, "_options_ref": "_select_options_real.comision_codigo"},
+        {"fieldname": "codigo", "fieldtype": "Link", "label": "Código", "options": "Clinyco Comision Codigo Catalogo", "in_list_view": 1, "reqd": 1},
         {"fieldname": "monto", "fieldtype": "Currency", "label": "Monto", "in_list_view": 1},
         {"fieldname": "fecha_pago", "fieldtype": "Date", "label": "Fecha Pago", "in_list_view": 1},
         {"fieldname": "colaborador", "fieldtype": "Link", "label": "Colaborador", "options": "Clinyco Colaborador Catalogo"},
