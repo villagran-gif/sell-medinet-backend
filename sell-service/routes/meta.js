@@ -31,17 +31,18 @@ function asZendeskList(items) {
 // GET /v2/pipelines
 // =============================================================================
 
-router.get("/pipelines", async (_req, res, next) => {
+router.get("/pipelines", async (req, res, next) => {
   try {
-    // Pipelines no están en Frappe como entity — son inferred desde
-    // CRM Deal Status + el custom field 'pipeline' en CRM Deal.
-    // Devolvemos los 4 hardcoded con sus IDs Zendesk.
-    const items = [
+    let items = [
       { id: 1290779, name: "Pipeline Cirugía Bariátricas", disabled: false, _frappe: "Bariátrica" },
       { id: 4823817, name: "Pipeline Balones", disabled: false, _frappe: "Balón" },
       { id: 4959507, name: "Pipeline Cirugía Plastica ", disabled: false, _frappe: "Plástica" },
       { id: 5049979, name: "Pipeline Cirugía General", disabled: false, _frappe: "General" },
     ];
+    if (req.query.ids) {
+      const ids = String(req.query.ids).split(",").map(Number).filter(Boolean);
+      items = items.filter((p) => ids.includes(p.id));
+    }
     res.json(asZendeskList(items));
   } catch (err) {
     next(err);
@@ -55,6 +56,10 @@ router.get("/pipelines", async (_req, res, next) => {
 router.get("/stages", async (req, res, next) => {
   try {
     const pipelineId = req.query.pipeline_id ? Number(req.query.pipeline_id) : null;
+    const idsFilter = req.query.ids
+      ? String(req.query.ids).split(",").map(Number).filter(Boolean)
+      : null;
+    const perPage = Math.min(Number(req.query.per_page) || 100, 200);
 
     // Mapeo Zendesk-style stages a partir de CRM Deal Status (8 statuses globales)
     // Cada pipeline expone los mismos 8 stages, con IDs sintéticos para compat.
@@ -90,7 +95,15 @@ router.get("/stages", async (req, res, next) => {
       }
     }
 
-    res.json(asZendeskList(items));
+    // Apply ?ids= filter if present
+    let filtered = items;
+    if (idsFilter) {
+      filtered = filtered.filter((s) => idsFilter.includes(s.id));
+    }
+    // sort_by=position is the default Zendesk Sell ordering — already true
+    filtered = filtered.slice(0, perPage);
+
+    res.json(asZendeskList(filtered));
   } catch (err) {
     next(err);
   }

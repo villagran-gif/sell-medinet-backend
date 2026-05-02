@@ -20,29 +20,54 @@ de `https://api.getbase.com` → `https://sell-medinet-backend.onrender.com/sell
 Header de auth: `X-API-Key: <SELL_API_KEY>` (también acepta `Authorization: Bearer`
 para compat con código que asumía Zendesk Sell auth).
 
-## Endpoints v0.1 (implementados)
+## Endpoints v0.2 (implementados)
+
+### Meta (read-only)
 
 | Endpoint | Estado | Notas |
 |---|---|---|
 | `GET /health` | ✅ | sin auth, valida conectividad a Frappe |
-| `GET /v2/pipelines` | ✅ | hardcoded 4 pipelines con IDs Zendesk preservados (1290779, 4823817, 4959507, 5049979) |
-| `GET /v2/stages` | ✅ | filtro opcional `?pipeline_id=`. IDs sintéticos `pipeline_id*100+position` |
-| `GET /v2/contact/custom_fields` | ✅ | derivado de translator's CONTACT_FROM_FRAPPE |
-| `GET /v2/deal/custom_fields` | ✅ | derivado de translator's DEAL_FROM_FRAPPE |
-| `GET /v2/lead/custom_fields` | ✅ | vacío (Zendesk Lead no tenía custom fields) |
+| `GET /v2/pipelines [?ids=]` | ✅ | 4 pipelines con IDs Zendesk preservados (1290779, 4823817, 4959507, 5049979) |
+| `GET /v2/stages [?pipeline_id=&ids=&per_page=]` | ✅ | IDs sintéticos `pipeline_id*100+position` |
+| `GET /v2/contact/custom_fields` | ✅ | derivado de CONTACT_FROM_FRAPPE |
+| `GET /v2/deal/custom_fields` | ✅ | derivado de DEAL_FROM_FRAPPE |
+| `GET /v2/lead/custom_fields` | ✅ | vacío (Zendesk Lead nunca tuvo custom fields) |
 | `GET /v2/users` | ✅ | desde Frappe Users con enabled=1 |
-| `GET /v2/lead_sources` | ✅ | desde CRM Lead Source con `is_for_lead=1` |
-| `GET /v2/deal_sources` | ✅ | desde CRM Lead Source con `is_for_deal=1` |
+| `GET /v2/lead_sources` | ✅ | filtro `is_for_lead=1` |
+| `GET /v2/deal_sources` | ✅ | filtro `is_for_deal=1` |
 
-## Endpoints v0.2+ (pendientes)
+### CRUD
 
-- CRUD contacts: `GET/POST/PUT /v2/contacts[/:id]`
-- CRUD deals: `GET/POST/PUT /v2/deals[/:id]`
-- CRUD leads: `GET/POST/PUT /v2/leads[/:id]`
-- Notes: `POST /v2/notes`
-- Search v3: `POST /v3/contacts/search`, `POST /v3/deals/search`
-  (host distinto en Zendesk: `api.sell.zendesk.com`. Acá se sirven en el mismo
-  endpoint base — los consumers configuran ambos hosts apuntando al satellite)
+| Endpoint | Estado | Notas |
+|---|---|---|
+| `GET /v2/contacts/:id` | ✅ | translator Frappe → Zendesk |
+| `GET /v2/contacts?ids=` | ✅ | multi-get |
+| `POST /v2/contacts` | ✅ | translator Zendesk → Frappe |
+| `PUT /v2/contacts/:id` | ✅ | |
+| `GET /v2/deals/:id` | ✅ | |
+| `GET /v2/deals?ids=` | ✅ | |
+| `POST /v2/deals` | ✅ | con child tables Comisiones (ComisionBAR1-6) y Colaboradores (Colab BAR/PLASTICA/GENERAL/BALON) |
+| `PUT /v2/deals/:id` | ✅ | top-level fields only (child tables = v0.3) |
+| `GET /v2/leads/:id` | ✅ | |
+| `GET /v2/leads?ids=` | ✅ | |
+| `POST /v2/leads` | ✅ | acepta custom fields médicos chilenos |
+| `PUT /v2/leads/:id` | ✅ | |
+| `POST /v2/notes` | ✅ | wrap a FCRM Note de Frappe |
+
+### Search v3 (api.sell.zendesk.com compat)
+
+| Endpoint | Estado | Notas |
+|---|---|---|
+| `POST /v3/contacts/search` | ✅ (básico) | filtros `eq` simples sobre `custom_fields:RUT_normalizado`, etc. and/or anidados en v0.3 |
+| `POST /v3/deals/search` | ✅ (básico) | idem |
+
+## Endpoints pendientes (v0.3)
+
+- DELETE endpoints
+- Search queries complejas (and/or anidados, ranges, sort)
+- Mirror mode dual-write Zendesk + Frappe
+- PUT child tables incremental
+- Webhooks outbound para events Frappe → Zendesk-shape
 
 ## Variables de entorno
 
