@@ -67,17 +67,36 @@ def download_url(url, timeout=60):
 
 
 def upload_to_frappe(filename, content, attached_to_doctype, attached_to_name):
-    """Use /api/method/upload_file with base64 content."""
-    body = {
-        "filename": filename,
-        "filedata": base64.b64encode(content).decode("ascii"),
-        "decode": True,  # Frappe will base64-decode
-        "doctype": attached_to_doctype,
-        "docname": attached_to_name,
-        "is_private": 1,
-    }
-    code, resp = http_frappe("POST", "/api/method/upload_file", body)
-    return code, resp
+    """multipart/form-data POST to /api/method/upload_file."""
+    boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+    crlf = b"\r\n"
+    body = b""
+    def field(name, value):
+        return (f"--{boundary}{chr(10)}Content-Disposition: form-data; name=\"{name}\"{chr(10)}{chr(10)}{value}{chr(10)}".encode())
+    parts = []
+    for k, v in [("doctype", attached_to_doctype), ("docname", attached_to_name),
+                 ("is_private", "1"), ("folder", "Home/Attachments")]:
+        parts.append(f"--{boundary}\r\n".encode())
+        parts.append(f'Content-Disposition: form-data; name="{k}"\r\n\r\n'.encode())
+        parts.append(f"{v}\r\n".encode())
+    # File part
+    parts.append(f"--{boundary}\r\n".encode())
+    parts.append(f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'.encode())
+    parts.append(b"Content-Type: application/octet-stream\r\n\r\n")
+    parts.append(content)
+    parts.append(b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode())
+    body = b"".join(parts)
+
+    req = urllib.request.Request(f"{SITE}/api/method/upload_file", data=body, method="POST",
+        headers={"Authorization": AUTH,
+                 "Content-Type": f"multipart/form-data; boundary={boundary}"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        try: return e.code, json.loads(e.read())
+        except: return e.code, {}
 
 
 def load_map(name):

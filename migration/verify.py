@@ -41,8 +41,9 @@ def main():
         "Contact": disc["entities"]["contacts"]["rows"],
         "CRM Deal": disc["entities"]["deals"]["rows"],
         "CRM Lead": disc["entities"]["leads"]["rows"],
-        "Comment": disc["entities"]["notes"]["rows"],
+        "FCRM Note": disc["entities"]["notes"]["rows"],
         "CRM Task": disc["entities"]["tasks"]["rows"],
+        "File": 395,
     }
     for dt, exp in expected.items():
         actual = count(dt)
