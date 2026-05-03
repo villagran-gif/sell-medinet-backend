@@ -95,14 +95,15 @@ def list_all(doctype, fields, filters=None, limit=200):
 
 
 def update_deal_contact(deal_name, contact_name):
-    """Add Contact to Deal contact_links child table."""
+    """Set Deal primary contact (Link) and contacts child table (CRM Contacts)."""
     enc = urllib.parse.quote(deal_name)
     body = {
-        "contact_links": [
-            {"link_doctype": "Contact", "link_name": contact_name, "is_primary": 1}
+        "contact": contact_name,
+        "contacts": [
+            {"contact": contact_name, "is_primary": 1}
         ]
     }
-    code, data = http("PUT", f"/api/resource/CRM Deal/{enc}", body)
+    code, data = http("PUT", f"/api/resource/CRM%20Deal/{enc}", body)
     return code in (200, 202), data
 
 
@@ -128,7 +129,7 @@ def main():
 
     print("\n=== Listing deals needing contact resolution ===")
     deals = list_all("CRM Deal",
-                     ["name", "rut_normalizado", "main_contact_id_zendesk"],
+                     ["name", "rut_normalizado"],
                      filters=[["rut_normalizado", "is", "set"]])
     print(f"  Total deals con rut_normalizado: {len(deals)}")
 
