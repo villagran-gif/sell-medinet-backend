@@ -71,24 +71,31 @@ def get_page(start, batch=200):
 
 
 def needs_update(c):
-    """Returns dict of fields to update, or None if nothing to do."""
+    """Returns dict of fields to update, or None if nothing to do.
+    Note: email_id/mobile_no en Frappe Contact son read-only (computed from
+    child tables email_ids/phone_nos). Hay que setear las child tables.
+    """
     upd = {}
     if not c.get("email_id"):
         em = clean_email(c.get("zd_email"))
-        if em: upd["email_id"] = em
-    if not c.get("mobile_no"):
-        ph = clean_phone(c.get("zd_mobile"))
-        if ph: upd["mobile_no"] = ph
-    if not c.get("phone"):
-        ph = clean_phone(c.get("zd_phone"))
-        if ph: upd["phone"] = ph
+        if em:
+            upd["email_ids"] = [{"email_id": em, "is_primary": 1}]
+    phones_child = []
+    mobile = clean_phone(c.get("zd_mobile"))
+    if mobile and not c.get("mobile_no"):
+        phones_child.append({"phone": mobile, "is_primary_mobile_no": 1})
+    phone = clean_phone(c.get("zd_phone"))
+    if phone and not c.get("phone"):
+        phones_child.append({"phone": phone, "is_primary_phone": 1})
+    if phones_child:
+        upd["phone_nos"] = phones_child
     if not c.get("company_name"):
         co = (c.get("zd_organisation_name") or "").strip()
         if co: upd["company_name"] = co
     is_org = (c.get("zd_is_organisation") or "").strip().lower()
     if is_org == "true":
         upd["is_company"] = 1
-    elif is_org == "false" and "is_company" not in upd:
+    elif is_org == "false":
         upd["is_company"] = 0
     return upd or None
 
@@ -98,12 +105,12 @@ def patch_one(name, body):
     c, r = http("PUT", f"/api/resource/Contact/{enc}", body)
     if c in (200, 202): return "OK"
     err = json.dumps(r).lower()
-    if "invalidphonenumber" in err or "invalid email" in err:
-        # Strip the offending field and retry
-        body2 = {k: v for k, v in body.items() if k not in ("mobile_no", "phone", "email_id")}
+    if "invalidphonenumber" in err:
+        # Retry sin phone_nos (deja la data en zd_*)
+        body2 = {k: v for k, v in body.items() if k != "phone_nos"}
         if not body2: return "SKIP"
         c2, _ = http("PUT", f"/api/resource/Contact/{enc}", body2)
-        return "OK_NOVAL" if c2 in (200, 202) else "ERR"
+        return "OK_NOPHONE" if c2 in (200, 202) else "ERR"
     return "ERR"
 
 
