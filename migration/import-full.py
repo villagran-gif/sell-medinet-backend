@@ -174,13 +174,10 @@ def translate_generic(row, doctype, id_field, source_id_col, contact_map=None):
         last = (row.get("last_name") or "").strip()
         if first: doc["first_name"] = first
         if last: doc["last_name"] = last
-        em = (row.get("email") or "").strip()
-        if em and "@" in em:
-            doc["email_ids"] = [{"email_id": em, "is_primary": 1}]
-        for col, primary_kw in [("mobile", "is_primary_mobile_no"), ("phone", "is_primary_phone")]:
-            ph = (row.get(col) or "").strip()
-            if ph:
-                doc.setdefault("phone_nos", []).append({"phone": ph, primary_kw: 1})
+        # email/phone se preservan en zd_email, zd_phone, zd_mobile (raw).
+        # No los seteamos en email_ids/phone_nos porque Frappe valida estricto
+        # (rechaza formatos chilenos válidos como '+56953908228'). Cleanup
+        # posterior puede poblar las child tables filtrando los válidos.
 
     elif doctype == "CRM Deal":
         rut = normalize_rut(row.get("custom RUT o ID") or row.get("custom RUT O ID")
