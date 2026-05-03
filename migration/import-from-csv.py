@@ -236,6 +236,38 @@ VALID_TRAMO = {"Tramo A", "Tramo B", "Tramo C", "Tramo D",
 
 VALID_TABACO = {"No", "Sí", "Ex-fumador"}
 
+VALID_COLELITIASIS = {"SI - Calculos en Ecografia", "NO - Ecografía sin Calculos", "COLECISTECTOMÍA PREVIA"}
+
+VALID_BIOPSIA = {"NO SE TOMO BIOPSIA - OK", "BIOPSIA PENDIENTE - NO AGENDAR !!", "BIOPSIA TOMADA Y REVISADA OK"}
+
+VALID_SUCURSAL = {"CLINCA BUPA ANTOFAGASTA", "CLINICA LA PORTADA ANTOFAGASTA", "SANTIAGO"}
+
+VALID_CIRUGIA_PROCEDIMIENTO = {
+    "MANGA", "BYPASS", "CONVERSIÓN MANGA-BYPASS", "ANTIRREFLUJO", "COLECISTECTOMÍA",
+    "HERNIOPLASTIA INGUINAL", "HEMORROIDECTOMÍA", "HERNIOPLASTIA UMBILICAL",
+    "HERNIOPLASTIA HIATAL", "ERCP", "FISTULA ANORECTAL", "APENDICECTOMÍA",
+    "ABDOMINOPLASTIA", "OTRAS PLASTICAS", "INSTALACIÓN BALON ORBERA",
+    "INSTALACIÓN BALON ALLURION", "RETIRO BALON ORBERA"
+}
+
+VALID_CIRUJANO_BARIATRICO = {"AUN NO LO DECIDE", "RODRIGO VILLAGRAN", "CRISTOBAL GUIXE",
+                              "NASSER ELUZEN", "ALBERTO SIRABO", "ANDRES SAN MARTIN",
+                              "CRISTOBAL DAVANZO", "JHOMAR YANSEN", "RAMON DIAZ",
+                              "FRANCISCO BENČINA", "FRANCISCO RODRIGUEZ",
+                              "AMALIA ZAPATA", "NELSON AROS"}
+
+CIRUJANO_ALIASES = {
+    "RODRIGO VILLAGRAN SANTIAGO": "RODRIGO VILLAGRAN",
+    "Rodrigo Villagran Morales": "RODRIGO VILLAGRAN",
+    "ALBERTO SIRABO SANTIAGO": "ALBERTO SIRABO",
+    "ANDRES SAN MARTIN SANTIAGO": "ANDRES SAN MARTIN",
+}
+
+VALID_CIRUJANO_PLASTICO = {"FRANCISCO BENČINA", "EDMUNDO ZIEDE", "ROSIRYS RUIZ"}
+VALID_CIRUJANO_GENERAL = {"SILVANA BINGHINOTTO", "CHRISTIAN ROMERO", "BRUNO SOLARI",
+                           "CARLOS ARCE", "RODRIGO VILLAGRAN", "ALBERTO SIRABO", "NELSON AROS"}
+VALID_CIRUJANO_BALON = {"RODRIGO VILLAGRAN", "NASSER ELUZEN", "ALBERTO SIRABO", "NELSON AROS"}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -410,6 +442,15 @@ def translate_contact_csv(row):
             elif fname == "tramo_modalidad":
                 m = normalize_select(v, VALID_TRAMO)
                 if m: f[fname] = m
+            elif fname == "sucursal":
+                m = normalize_select(v, VALID_SUCURSAL)
+                if m: f[fname] = m
+            elif fname == "colelitiasis":
+                m = normalize_select(v, VALID_COLELITIASIS)
+                if m: f[fname] = m
+            elif fname == "biopsia_pendiente":
+                m = normalize_select(v, VALID_BIOPSIA)
+                if m: f[fname] = m
             elif fname == "ciudad" and not ciudad_set:
                 f[fname] = v
                 ciudad_set = True
@@ -490,6 +531,30 @@ def translate_deal_csv(row):
                 if m: f[fname] = m
             elif fname == "tramo_modalidad":
                 m = normalize_select(v, VALID_TRAMO)
+                if m: f[fname] = m
+            elif fname == "cirujano_bariatrico":
+                m = normalize_select(v, VALID_CIRUJANO_BARIATRICO, CIRUJANO_ALIASES)
+                if m: f[fname] = m
+            elif fname == "cirujano_plastico":
+                m = normalize_select(v, VALID_CIRUJANO_PLASTICO)
+                if m: f[fname] = m
+            elif fname == "cirujano_general":
+                m = normalize_select(v, VALID_CIRUJANO_GENERAL)
+                if m: f[fname] = m
+            elif fname == "cirujano_balon":
+                m = normalize_select(v, VALID_CIRUJANO_BALON)
+                if m: f[fname] = m
+            elif fname == "cirugia_procedimiento":
+                m = normalize_select(v, VALID_CIRUGIA_PROCEDIMIENTO)
+                if m: f[fname] = m
+            elif fname == "sucursal":
+                m = normalize_select(v, VALID_SUCURSAL)
+                if m: f[fname] = m
+            elif fname == "colelitiasis":
+                m = normalize_select(v, VALID_COLELITIASIS)
+                if m: f[fname] = m
+            elif fname == "biopsia_pendiente":
+                m = normalize_select(v, VALID_BIOPSIA)
                 if m: f[fname] = m
             else:
                 f[fname] = v
