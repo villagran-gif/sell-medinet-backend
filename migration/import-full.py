@@ -203,6 +203,13 @@ def translate_generic(row, doctype, id_field, source_id_col, contact_map=None):
         # Currency
         cur = (row.get("currency") or "").strip()
         if cur: doc["currency"] = cur
+        # Loss reason: Frappe requires it para deals Lost (SUSPENDIDO/SIN RESPUESTA/DESCALIFICADO)
+        lr = (row.get("loss_reason") or "").strip()
+        sn_up = sn.upper()
+        if lr:
+            doc["lost_reason"] = lr
+        elif sn_up in ("SUSPENDIDO", "SIN RESPUESTA", "DESCALIFICADO"):
+            doc["lost_reason"] = "Sin información"
 
     elif doctype == "CRM Lead":
         first = (row.get("first_name") or "").strip()
