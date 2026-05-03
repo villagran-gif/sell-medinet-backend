@@ -56,7 +56,7 @@ ENTITY_CONFIG = {
     },
     "notes": {
         "csv": "notes.0.csv",
-        "doctype": "Comment",
+        "doctype": "FCRM Note",
         "id_field": "zendesk_id_note",
         "source_id": "id",
     },
@@ -119,6 +119,15 @@ def normalize_rut(v):
     return s if 7 <= len(s) <= 10 else None
 
 
+def _email_for_owner(name):
+    """Replica de schema-setup.email_from_name. Returns email used to create User."""
+    n = name.replace(" - Deleted", "").strip().lower()
+    n = re.sub(r"\s+", ".", n)
+    n = re.sub(r"[^a-z0-9._-]", "", n)
+    n = re.sub(r"\.+", ".", n).strip(".")
+    return f"{n or 'user'}@clinyco.cl"
+
+
 def load_map(name):
     p = f"{MAP_DIR}/{name}"
     if os.path.exists(p):
@@ -177,10 +186,10 @@ def translate_generic(row, doctype, id_field, source_id_col, contact_map=None):
         rut = normalize_rut(row.get("custom RUT o ID") or row.get("custom RUT O ID")
                              or row.get("custom RUT_normalizado"))
         if rut: doc["rut_normalizado"] = rut
-        # Pipeline + stage
+        # Pipeline (custom) + status (link to CRM Deal Status)
         pn = (row.get("pipeline_name") or "").strip()
         sn = (row.get("stage_name") or "").strip()
-        if pn: doc["pipeline"] = pn
+        if pn: doc["pipeline_name"] = pn
         if sn: doc["status"] = sn
         # Main contact link via map
         mcid = (row.get("main_contact_id") or "").strip()
@@ -188,9 +197,15 @@ def translate_generic(row, doctype, id_field, source_id_col, contact_map=None):
             doc["zendesk_id_main_contact"] = mcid
             if contact_map and mcid in contact_map:
                 doc["contact"] = contact_map[mcid]
-        # Deal name
+        # Deal name (lead_name native)
         nm = (row.get("name") or "").strip()
-        if nm: doc["lead_name"] = nm
+        if nm: doc["lead_name"] = nm[:140]
+        # Owner → User
+        owner = (row.get("owner") or "").strip()
+        if owner: doc["deal_owner"] = _email_for_owner(owner)
+        # Currency
+        cur = (row.get("currency") or "").strip()
+        if cur: doc["currency"] = cur
 
     elif doctype == "CRM Lead":
         first = (row.get("first_name") or "").strip()
@@ -202,26 +217,32 @@ def translate_generic(row, doctype, id_field, source_id_col, contact_map=None):
         org = (row.get("company_name") or "").strip()
         if org: doc["organization"] = org
 
-    elif doctype == "Comment":
-        # Map noteable_type+id → reference_doctype + reference_name via maps
+    elif doctype == "FCRM Note":
+        # FCRM Note uses reference_doctype + reference_docname (Dynamic Link)
         rt = (row.get("noteable_type") or "").strip()
         rid = (row.get("noteable_id") or "").strip()
         if rt and rid:
             doc["zendesk_noteable_type"] = rt
             doc["zendesk_noteable_id"] = rid
         content = (row.get("content") or "").strip()
-        if content:
-            doc["content"] = content
-            doc["comment_type"] = "Comment"
-        # NOTE: reference_doctype/name resolution happens at insert time below.
+        if content: doc["content"] = content
+        doc["title"] = (content[:80] + "...") if len(content) > 80 else (content or "Note")
 
     elif doctype == "CRM Task":
         title = (row.get("content") or "").strip()
         if title: doc["title"] = title[:140]
+        else: doc["title"] = "Task"
         date = (row.get("date") or "").strip()
-        if date: doc["due_date"] = date[:10]
+        if date: doc["due_date"] = date.replace("T", " ").split(".")[0][:19]
         done = (row.get("done_at") or "").strip()
         doc["status"] = "Done" if done else "Backlog"
+        owner = (row.get("owner") or "").strip()
+        if owner: doc["assigned_to"] = _email_for_owner(owner)
+        rt = (row.get("taskable_type") or "").strip()
+        rid = (row.get("taskable_id") or "").strip()
+        if rt and rid:
+            doc["zendesk_taskable_type"] = rt
+            doc["zendesk_taskable_id"] = rid
 
     return doc
 
@@ -302,16 +323,24 @@ def run(entity, args):
     def process(idx, row):
         try:
             doc = translate_generic(row, doctype, id_field, source_id_col, contact_map)
-            # Notes need reference resolution
-            if doctype == "Comment":
+            # Notes need reference resolution (FCRM Note uses reference_docname)
+            if doctype == "FCRM Note":
                 rt = (row.get("noteable_type") or "").strip()
                 rid = (row.get("noteable_id") or "").strip()
                 ref_dt, ref_name = resolve_ref(rt, rid)
                 if ref_dt and ref_name:
                     doc["reference_doctype"] = ref_dt
-                    doc["reference_name"] = ref_name
-                else:
-                    return idx, "NOLINK", row.get("id"), None
+                    doc["reference_docname"] = ref_name
+                # else: insert anyway, with zd_noteable_* preserved for later resolution
+
+            # Tasks: optional taskable resolution
+            if doctype == "CRM Task":
+                rt = (row.get("taskable_type") or "").strip()
+                rid = (row.get("taskable_id") or "").strip()
+                ref_dt, ref_name = resolve_ref(rt, rid)
+                if ref_dt and ref_name:
+                    doc["reference_doctype"] = ref_dt
+                    doc["reference_docname"] = ref_name
             # Tasks need taskable resolution to assignee link (skip if no resolution)
             if args.dry_run:
                 return idx, "DRY", row.get("id"), None

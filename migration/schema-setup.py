@@ -115,32 +115,30 @@ def setup_users(discovery):
     return user_email_by_name
 
 
-def setup_pipelines_stages(discovery):
-    print("\n=== Pipelines + Stages ===")
-    stats_p = {"OK": 0, "EXISTS": 0, "ERR": 0}
+def setup_stages(discovery):
+    """Crea CRM Deal Status (no hay CRM Deal Pipeline doctype en este FCRM).
+    Pipeline queda como custom field 'zd_pipeline_name' en CRM Deal.
+    Usa heurística para `type`: CERRADO OPERADO/INSTALADO/AGENDADO → Won,
+    SUSPENDIDO/SIN RESPUESTA/DESCALIFICADO → Lost, resto → Open.
+    """
+    print("\n=== Stages (CRM Deal Status) ===")
     stats_s = {"OK": 0, "EXISTS": 0, "ERR": 0}
-
-    # Stages first (CRM Deal Status), each with their owning pipeline noted in description
     stages_seen = set()
     for pname, slist in discovery["pipelines"].items():
         for s in slist:
-            if s in stages_seen: continue
+            if s in stages_seen or s == "<no_stage>": continue
             stages_seen.add(s)
-            doc = {"doctype": "CRM Deal Status", "name": s, "color": "gray"}
+            up = s.upper()
+            if "CERRADO" in up: stage_type = "Won"
+            elif up in ("SUSPENDIDO", "SIN RESPUESTA", "DESCALIFICADO"): stage_type = "Lost"
+            else: stage_type = "Open"
+            doc = {"doctype": "CRM Deal Status",
+                   "deal_status": s, "type": stage_type, "color": "gray"}
             st, info = insert(doc)
             stats_s[st] = stats_s.get(st, 0) + 1
             if st == "ERR":
                 print(f"  ERR stage {s}: {info}")
-    print(f"  Stages (CRM Deal Status): {stats_s}")
-
-    # Pipelines (CRM Deal Pipeline) — one row per pipeline
-    for pname in discovery["pipelines"]:
-        doc = {"doctype": "CRM Deal Pipeline", "pipeline_name": pname}
-        st, info = insert(doc)
-        stats_p[st] = stats_p.get(st, 0) + 1
-        if st == "ERR":
-            print(f"  ERR pipeline {pname}: {info}")
-    print(f"  Pipelines: {stats_p}")
+    print(f"  {stats_s}")
 
 
 def setup_tags(discovery):
@@ -164,17 +162,26 @@ def setup_custom_fields(discovery):
         "CRM Deal": [
             ("zendesk_id_deal", "Data", "Zendesk Deal ID", 1),
             ("zendesk_id_main_contact", "Data", "Zendesk Main Contact ID", 1),
+            ("pipeline_name", "Data", "Pipeline (Zendesk Sell)", 1),
         ],
         "CRM Lead": [("zendesk_id_lead", "Data", "Zendesk Lead ID", 1)],
-        "Comment": [("zendesk_id_note", "Data", "Zendesk Note ID", 1)],
-        "CRM Task": [("zendesk_id_task", "Data", "Zendesk Task ID", 1)],
+        "FCRM Note": [
+            ("zendesk_id_note", "Data", "Zendesk Note ID", 1),
+            ("zendesk_noteable_type", "Data", "Zendesk Noteable Type", 0),
+            ("zendesk_noteable_id", "Data", "Zendesk Noteable ID", 0),
+        ],
+        "CRM Task": [
+            ("zendesk_id_task", "Data", "Zendesk Task ID", 1),
+            ("zendesk_taskable_type", "Data", "Zendesk Taskable Type", 0),
+            ("zendesk_taskable_id", "Data", "Zendesk Taskable ID", 0),
+        ],
     }
 
     entity_to_doctype = {
         "contacts": "Contact",
         "deals": "CRM Deal",
         "leads": "CRM Lead",
-        "notes": "Comment",
+        "notes": "FCRM Note",
         "tasks": "CRM Task",
     }
 
@@ -243,7 +250,7 @@ def main():
     print(f"Discovery: {sum(e['rows'] for e in discovery['entities'].values())} rows total")
 
     setup_users(discovery)
-    setup_pipelines_stages(discovery)
+    setup_stages(discovery)
     setup_tags(discovery)
     setup_custom_fields(discovery)
 
