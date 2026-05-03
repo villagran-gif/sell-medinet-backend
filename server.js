@@ -1,6 +1,7 @@
 import express from "express";
 import { randomUUID } from "crypto";
 import { createSupportRouter } from "./support-service/index.js";
+import { createTiktokBridgeRouter } from "./tiktok-bridge/index.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,6 +25,18 @@ if (process.env.SUPPORT_ENABLED === "true") {
   console.log("[support-service] mounted at /support");
 } else {
   console.log("[support-service] disabled (set SUPPORT_ENABLED=true to enable)");
+}
+
+// ======================
+// tiktok-bridge (opt-in vía TIKTOK_BRIDGE_ENABLED=true)
+// ManyChat (TikTok gateway) <-> Chatwoot API inbox. Sin tráfico cuando está
+// apagado. Ver tiktok-bridge/README.md.
+// ======================
+if (process.env.TIKTOK_BRIDGE_ENABLED === "true") {
+  app.use("/webhooks", createTiktokBridgeRouter());
+  console.log("[tiktok-bridge] mounted at /webhooks");
+} else {
+  console.log("[tiktok-bridge] disabled (set TIKTOK_BRIDGE_ENABLED=true to enable)");
 }
 
 // ======================
