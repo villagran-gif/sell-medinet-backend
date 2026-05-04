@@ -39,46 +39,30 @@ TYPE_MAP = {
 def main():
     if not (SITE and KEY and SECRET): sys.exit("env")
 
-    # 1. Listar todos los Custom Fields en Contact
-    fields_url = ("/api/method/frappe.client.get_list?doctype=Custom%20Field"
-                  "&filters=%5B%5B%22dt%22%2C%22%3D%22%2C%22Contact%22%5D%5D"
-                  "&fields=%5B%22fieldname%22%2C%22fieldtype%22%2C%22label%22%5D"
-                  "&limit_page_length=500&order_by=idx")
-    code, data = http("GET", fields_url)
-    cf = data.get("message", []) or []
-    print(f"Custom fields on Contact: {len(cf)}")
-
-    # 2. Construir columnas + rows
-    # Canonicals first (las útiles)
-    canonical_cols = [
-        {"label": "Nombre", "key": "full_name", "type": "Data", "width": "14rem"},
-        {"label": "Email", "key": "email_id", "type": "Data", "width": "14rem"},
-        {"label": "Móvil", "key": "mobile_no", "type": "Data", "width": "12rem"},
-        {"label": "Teléfono", "key": "phone", "type": "Data", "width": "12rem"},
-        {"label": "Organización", "key": "company_name", "type": "Data", "width": "12rem"},
-        {"label": "RUT", "key": "rut_normalizado", "type": "Data", "width": "10rem"},
-        {"label": "Zendesk ID", "key": "zendesk_id_contact", "type": "Data", "width": "10rem"},
-        {"label": "Modificado", "key": "modified", "type": "Datetime", "width": "10rem"},
+    # Lista curada de columnas default (las mas utiles).
+    # Las otras siguen existiendo, accesibles vía detalle del contact.
+    columns = [
+        {"label": "Nombre",       "key": "full_name",            "type": "Data", "width": "16rem"},
+        {"label": "Email",        "key": "email_id",             "type": "Data", "width": "14rem"},
+        {"label": "Móvil",        "key": "mobile_no",            "type": "Data", "width": "12rem"},
+        {"label": "Teléfono",     "key": "phone",                "type": "Data", "width": "12rem"},
+        {"label": "Organización", "key": "company_name",         "type": "Data", "width": "12rem"},
+        {"label": "RUT",          "key": "rut_normalizado",      "type": "Data", "width": "10rem"},
+        {"label": "Owner",        "key": "zd_owner",             "type": "Long Text", "width": "10rem"},
+        {"label": "Creator",      "key": "zd_creator",           "type": "Long Text", "width": "10rem"},
+        {"label": "Status",       "key": "zd_customer_status",   "type": "Long Text", "width": "8rem"},
+        {"label": "Prospect",     "key": "zd_prospect_status",   "type": "Long Text", "width": "8rem"},
+        {"label": "Ciudad",       "key": "zd_city",              "type": "Long Text", "width": "10rem"},
+        {"label": "Edad",         "key": "zd_custom_contact_edad", "type": "Long Text", "width": "6rem"},
+        {"label": "Previsión",    "key": "zd_custom_contact_prevision", "type": "Long Text", "width": "10rem"},
+        {"label": "Última actividad", "key": "zd_last_activity_date", "type": "Long Text", "width": "10rem"},
+        {"label": "Zendesk ID",   "key": "zendesk_id_contact",   "type": "Data", "width": "9rem"},
+        {"label": "Modificado",   "key": "modified",             "type": "Datetime", "width": "10rem"},
     ]
-    canonical_keys = {c["key"] for c in canonical_cols}
 
-    cf_cols = []
-    for f in cf:
-        fname = f["fieldname"]
-        if fname in canonical_keys: continue
-        cf_cols.append({
-            "label": f.get("label") or fname,
-            "key": fname,
-            "type": TYPE_MAP.get(f.get("fieldtype"), "Data"),
-            "width": "12rem",
-        })
-
-    columns = canonical_cols + cf_cols
     rows_keys = ["name"] + [c["key"] for c in columns]
+    print(f"Default columns: {len(columns)}")
 
-    print(f"Total columns: {len(columns)} (canonical {len(canonical_cols)} + custom {len(cf_cols)})")
-
-    # 3. PUT en CRM View Settings id=2
     body = {
         "columns": json.dumps(columns, ensure_ascii=False),
         "rows": json.dumps(rows_keys, ensure_ascii=False),
