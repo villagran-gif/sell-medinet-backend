@@ -1,5 +1,14 @@
 # CLAUDE.md — Instrucciones para Claude Code
 
+## ⚠️ Migración Frappe FCRM en curso (2026-05)
+
+Antes de cualquier trabajo sobre FCRM / Frappe Cloud / migración de datos:
+
+1. **Leer `migration/MIGRATION_STATE.md`** (estado completo del site, schema, scripts, decisiones, limitaciones)
+2. **Leer `migration/SESSION_HISTORY.md`** (historial de la sesión que migró Sell + Support)
+
+Site activo: `https://crm-yqh-dgj.m.frappe.cloud` (NO el viejo `clinyco.frappe.cloud` que está deprecated). Branch de trabajo: `claude/whatsapp-system-user-token-WKAZ7`.
+
 ## Contexto del repo
 Backend Node.js + Express que conecta Zendesk Sell con Medinet.
 
