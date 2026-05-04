@@ -1,20 +1,32 @@
-# Google SSO único — Frappe CRM (`crm-yqh-dgj.m.frappe.cloud`)
+# Google SSO — Frappe CRM (`crm-yqh-dgj.m.frappe.cloud`)
 
-Guía operativa para que los agentes ingresen al CRM **solamente con su cuenta
-Google** (sin password local) y queden auto-provisionados en el primer login.
+**Estado: ✅ Operativo desde 2026-05-04.**
+
+Guía operativa para habilitar **login con Google** en el CRM, conviviendo con
+el método tradicional user/password. Los agentes pueden elegir cualquiera de
+los dos en `/login`.
+
+> Política original: "solo Google, sin password". **Cambió** durante el rollout
+> (decisión 2026-05-04) → **se permiten ambos métodos**. Razones:
+> 1. Si Google falla (provider down, secret rotado, etc.), nadie queda afuera.
+> 2. Menor riesgo de lockout para el admin "break-glass".
+> 3. Migración progresiva: los agentes que ya tienen passwords pueden seguir
+>    usándolos hasta que adopten Google a su ritmo.
+>
+> Las secciones 5 y 5.2 ("desactivar password login" + "hide form CSS")
+> quedan como **apéndice opcional** — se aplican si en el futuro se decide
+> volver a forzar Google único.
 
 ---
 
-## 1. Objetivo y motivación
+## 1. Objetivo
 
-- **Login único = Google**. Cada agente ya tiene cuenta Google (Gmail/Workspace)
-  para email, Drive, etc. Reusamos esa identidad como SSO del CRM.
-- **No password local**. Eliminamos la creación de passwords paralelos: menos
-  superficie de ataque, sin reseteos manuales.
-- **JIT provisioning**. El primer login crea automáticamente el `User` Frappe
-  con un Role Profile por defecto. Sin alta manual previa.
-- **Identidad portable**. El email Google del agente es la clave canónica entre
-  CRM, Chatwoot, Drive, etc. No hay que mantener listas de usuarios paralelas.
+- **Botón "Login con Google"** en `/login` — además del form user/password.
+- **JIT provisioning**: el primer login crea automáticamente el `User` Frappe
+  si el email coincide con un agente existente (o si los signups están
+  permitidos a nivel site).
+- **Identidad portable**. El email Google del agente sirve como clave canónica
+  entre CRM, Chatwoot, Drive, etc.
 
 ## 2. Prerrequisitos
 
@@ -98,7 +110,10 @@ python3 migration/setup-google-sso.py            # dry-run, muestra el plan
 python3 migration/setup-google-sso.py --execute  # aplica
 ```
 
-## 5. Paso 3 — Desactivar password login
+## 5. Paso 3 — Desactivar password login (⚠️ APÉNDICE OPCIONAL — no aplicar por defecto)
+
+> **Esta sección NO se aplica con la política actual** (Google + user/pass conviven).
+> Queda documentada por si en el futuro se decide volver a Google único.
 
 Frappe Cloud Managed no permite editar `site_config.json` directamente. Usamos
 los toggles en **System Settings** + un override CSS opcional.
@@ -226,12 +241,80 @@ Si algo se rompe y necesitamos volver al login user/pass de emergencia:
 | `GOOGLE_OAUTH_CLIENT_SECRET` | Render env, Frappe Social Login Key, 1Password | OAuth handshake (no commitear) |
 | `FRAPPE_CLOUD_API_KEY` / `_SECRET` | Render env, 1Password | API Frappe (ya existe) |
 
-## 11. Referencias
+## 11. Troubleshooting — lecciones del rollout (2026-05-04)
+
+Sesión real de ~4 horas para que el flow funcionara end-to-end. Síntomas y
+causas reales encontradas, en orden de frecuencia:
+
+### 11.1 `Error 401: invalid_client — The OAuth client was not found`
+
+Aparece en la pantalla de Google (no llega a Frappe).
+
+- **Causa real**: el **Client ID** pegado en Frappe no coincide con un cliente
+  activo en Google Cloud Console. Casi siempre por typo o por estar
+  trabajando en **el proyecto Google equivocado**.
+- **Fix**: copiar el Client ID exacto desde el modal de Google (con el
+  ícono 📋, no a mano). Verificar que el OAuth Client está en `clinyco-crm`
+  y no en otro project.
+
+### 11.2 `Decoder failed to handle access_token ... invalid_client ... The provided client secret is invalid`
+
+Aparece **del lado Frappe** (pantalla "Error del Servidor 500"). Para verlo, ir a
+`/app/error-log` o click "Mostrar error" en la pantalla 500.
+
+- **Causa típica**: el **Client Secret** quedó pegado mal en Frappe. Subcasos
+  reales encontrados:
+  1. **Se pegó la URL de redirect** (`https://crm-yqh-dgj.m.frappe.cloud/api/...`)
+     en el campo Secret en lugar del valor real `GOCSPX-...`. El traceback
+     lo expone literal en `client_secret='https://...'`.
+  2. **El secret se pegó cortado** (Cmd+C no copió todo). Los secrets de
+     Google son **35 chars**, formato `GOCSPX-` + 28 chars. Verificar con el
+     ícono 👁 y contar.
+  3. **El secret quedó "huérfano"** en Google: aparece en el JSON descargado
+     y en la UI como "Habilitada", pero Google lo rechaza igual. Solución
+     definitiva: **borrar el OAuth Client entero y crear uno nuevo desde cero**.
+     Recrear el client + secret destrabó el rollout final.
+- **Cómo diagnosticar**: el `repr` del traceback en `/app/error-log` muestra
+  el valor exacto que Frappe envía. Comparar carácter por carácter con el
+  modal del OAuth Client en Google Cloud.
+
+### 11.3 `login_via_google() missing 2 required positional arguments: 'code' and 'state'`
+
+- **Causa**: el browser cargó la URL del callback **sin los query params**.
+  Pasa cuando el usuario reloadea la página de error 500 — el reload re-pega
+  la URL pero sin el `?code=...&state=...` que Google había agregado.
+- **Fix**: ignorar este entry, no es la causa raíz. El error real está en
+  otra entrada del log con `form_dict` conteniendo `code` y `state`.
+
+### 11.4 Login con Google funciona pero el user no entra al CRM
+
+- **Causa**: el User en Frappe existe pero su **Tipo de Usuario** es
+  `Website User` (default si se migró desde otra fuente). Los Website Users
+  no tienen acceso al desk Frappe ni típicamente al FCRM.
+- **Fix**: en `/app/user/{email}` cambiar **Tipo de Usuario** a `System User`.
+  Verificable rápido en `/app/user?enabled=1` columna "Tipo de usuario".
+
+### 11.5 Email mismatch entre Google y Frappe
+
+- **Causa**: la cuenta Google del agente es `villagran@clinyco.cl` pero el
+  User Frappe tiene email `dr.villagran@clinyco.cl` (con prefijo).
+- **Fix**: el email del User Frappe debe ser **idéntico** al de la cuenta
+  Google. Frappe permite "merge" entre dos users si ambos existen
+  (cambiar email tira merge automático).
+
+### 11.6 Browser cache del error 500
+
+- Después de fallar varias veces, el browser cachea la página de error.
+- **Fix**: cerrar TODAS las ventanas incógnito y abrir una nueva.
+
+---
+
+## 12. Referencias
 
 - Frappe Social Login Key (v16):
   https://docs.frappe.io/framework/user/en/guides/integration/social-logins
 - Google OAuth 2.0 Web Server flow:
   https://developers.google.com/identity/protocols/oauth2/web-server
-- `docs/migration-chatwoot-frappe.md` § 11 (credenciales pendientes)
-- `migration/MIGRATION_STATE.md` § 13 (pendientes operativos)
+- `docs/migration-chatwoot-frappe.md` § 11 (credenciales)
+- `migration/MIGRATION_STATE.md` § 13 (estado operativo)
 - `migration/setup-google-sso.py` (automatización del paso 4.2)

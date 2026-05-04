@@ -128,7 +128,7 @@ User confirmó: "Organizations → Pipelines" funcionó. "Clientes potenciales �
 - **Buscador global**: FCRM Cmd+K reportado como no funciona; revisar.
 - **Tickets en Support panel**: Form Script `show_tickets_deal` puede no estar matcheando los selectores CSS correctos. Validar.
 - **Phone update en CRM Task**: ejecutado en background; verificar que `deal_phone` está populado.
-- **Google SSO único** (sin password local) para los agentes: procedimiento en `migration/auth-google-sso.md`. Bloqueado por OAuth Client ID/Secret de Google Cloud Console. Script: `migration/setup-google-sso.py` (idempotente, configura el Social Login Key vía API).
+- **Google SSO** (login adicional al user/pass): ✅ **Operativo desde 2026-05-04** para `villagran@clinyco.cl` (Workspace Internal, OAuth Client `clinyco-crm`). Detalles + lecciones en `migration/auth-google-sso.md`. Política decidida: ambos métodos conviven (no se forzó "Google único"). Pendiente: migrar los 21 Website Users restantes a `System User` y validar que sus emails coinciden con sus Google Workspace accounts antes del rollout masivo.
 
 ## 14. Limitaciones conocidas
 
