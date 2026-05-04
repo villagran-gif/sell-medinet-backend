@@ -45,7 +45,7 @@ COLUMNS = [
     {"label": "Fase",                  "key": "status",                       "type": "Link",      "width": "11rem"},
     {"label": "Propiedad",             "key": "deal_owner",                   "type": "Link",      "width": "10rem"},
     {"label": "Fecha cirugía",         "key": "fecha_cirugia",                "type": "Date",      "width": "10rem"},
-    {"label": "Agregado el",           "key": "creation",                     "type": "Datetime",  "width": "10rem"},
+    {"label": "Agregado el",           "key": "zd_created_at",                "type": "Data"    ,  "width": "10rem"},
     {"label": "Tramo/Modalidad",       "key": "tramo_modalidad",              "type": "Select",    "width": "9rem"},
     {"label": "Cirugía/Procedimiento", "key": "cirugia_procedimiento",        "type": "Select",    "width": "12rem"},
     {"label": "Sucursal",              "key": "sucursal",                     "type": "Select",    "width": "12rem"},
