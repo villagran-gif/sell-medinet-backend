@@ -1,6 +1,7 @@
 import express from "express";
 import { randomUUID } from "crypto";
 import { createSupportRouter } from "./support-service/index.js";
+import { createTiktokBridgeRouter } from "./tiktok-bridge/index.js";
 import { createChatwootWebhookRouter } from "./chatwoot-webhook/index.js";
 import { createSellRouter } from "./sell-service/index.js";
 
@@ -29,10 +30,17 @@ if (process.env.SUPPORT_ENABLED === "true") {
 }
 
 // ======================
-// chatwoot-webhook (opt-in vía CHATWOOT_WEBHOOK_ENABLED=true)
-// Receptor de eventos de Chatwoot. Persiste raw payloads en chatwoot.raw_events.
-// Ver chatwoot-webhook/README.md.
+// tiktok-bridge (opt-in vía TIKTOK_BRIDGE_ENABLED=true)
+// ManyChat (TikTok gateway) <-> Chatwoot API inbox. Sin tráfico cuando está
+// apagado. Ver tiktok-bridge/README.md.
 // ======================
+if (process.env.TIKTOK_BRIDGE_ENABLED === "true") {
+  app.use("/webhooks", createTiktokBridgeRouter());
+  console.log("[tiktok-bridge] mounted at /webhooks");
+} else {
+  console.log("[tiktok-bridge] disabled (set TIKTOK_BRIDGE_ENABLED=true to enable)");
+}
+
 // ======================
 // sell-service (opt-in vía SELL_SERVICE_ENABLED=true)
 // Satellite que emula Zendesk Sell API v2 hacia Frappe Cloud REST.
@@ -46,6 +54,11 @@ if (process.env.SELL_SERVICE_ENABLED === "true") {
   console.log("[sell-service] disabled (set SELL_SERVICE_ENABLED=true to enable)");
 }
 
+// ======================
+// chatwoot-webhook (opt-in vía CHATWOOT_WEBHOOK_ENABLED=true)
+// Receptor de eventos de Chatwoot. Persiste raw payloads en chatwoot.raw_events.
+// Ver chatwoot-webhook/README.md.
+// ======================
 if (process.env.CHATWOOT_WEBHOOK_ENABLED === "true") {
   app.use(
     "/chatwoot-webhook",
