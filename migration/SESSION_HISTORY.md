@@ -106,10 +106,12 @@ Resultado: 59,373 tickets importados. 7,974 con contact link (13%, esperable por
 ## 8. Customizations posteriores
 
 - **Quick filter Nombre + RUT**: Property Setter `in_standard_filter=1`. No suficiente — FCRM hardcodea quick filters. Workaround: Form Script con search inputs.
-- **Sidebar customization** (Contactos, Notas hide; Organizations→Pipeline, Clientes potenciales→Leads rename; Public/Pinned Views hide): Form Script `view: List/Form` NO aplica al sidebar. **No resuelto**. Posibles caminos: Property Setter sobre DocType.label, hide_in_navbar flag, FCRM Settings doctype. Sin investigar a fondo.
+- **Sidebar customization** (Contactos, Notas hide; Organizations→Pipeline, Clientes potenciales→Leads rename; Public/Pinned Views hide): Form Script `view: List/Form` NO aplica al sidebar. **Resuelto vía Translation doctype** (es+es-419). Property Setter sobre Doctype.label NO funciona. `restrict_to_domain=1` aplicado a Contact/FCRM Note (sin verificar).
 - **Tasks states Pendiente/Realizada**: Property Setter `CRM Task.status.options = "\nPendiente\nRealizada"` + default + bulk update 6860 tasks (Done|Canceled → Realizada; resto → Pendiente). Resultado: 763 Pendiente / 6097 Realizada.
 - **Track changes en CRM Task**: Property Setter `track_changes=1`. Activity Log registra cambios futuros (no históricos).
 - **Side panel "Tickets en Support"**: Form Script `show_tickets_deal`/`show_tickets_contact` inyecta panel HTML. CSS selectors pueden necesitar ajuste según DOM real.
+- **CRM Task list view**: Created CRM View Settings ID 5. Columns: Título, Nombre (deal_lead_name), RUT (deal_rut), Teléfono (deal_phone), Deal (reference_docname), Estado, Asignado, Fecha límite, Prioridad, Modificado. Plus Form Script `task_deal_clickable`: row click → deal#tasks.
+- **Translation overrides**: "Clientes potenciales"→"Leads" (es), "Organizations"→"Pipelines" (es+es-419), plus overrides directos.
 
 ## 9. Decisiones consolidadas
 
@@ -123,6 +125,7 @@ Resultado: 59,373 tickets importados. 7,974 con contact link (13%, esperable por
 - Primera vez que se quejó del freeze: pensé que era Chrome. NO ERA. Era nginx 4094 byte URL limit. Issue #1884.
 - "tus cambios no funcionan en absoluto": Form Scripts en CRM Deal no afectan sidebar global. No reconocí inmediatamente.
 - Frustración por interpretar mal su lista (creí que quería esconder Tareas — solo se quejaba que no tenían deal asociado, lo cual ya está OK).
+- Próxima sesión NO ve el contexto de Claude porque sandbox local de Frappe Cloud no sincroniza con GitHub. Solución: push de docs directo a main vía MCP github.
 
 ## 11. Estado al cierre de sesión
 
@@ -130,12 +133,14 @@ Resultado: 59,373 tickets importados. 7,974 con contact link (13%, esperable por
 ✅ List view del Deal con 50 cols + filtros estilo Zendesk
 ✅ Layouts Datos+Side Panel organizados con zd_*
 ✅ Pipeline + stages coloreados + filtrables
-✅ Tasks con estados Pendiente/Realizada + track_changes
+✅ Tasks con estados Pendiente/Realizada + track_changes + Deal column en list view
 ✅ Tickets de Support migrados + linkeados
-❌ Sidebar customization (hide Contactos/Notas, rename Organizations/Clientes potenciales) — pendiente investigar Property Setter / hide_in_navbar
-❌ Cleanup CRM View Settings duplicates — pendiente
+✅ Translation "Clientes potenciales"→"Leads" + "Organizations"→"Pipelines"
+✅ CLAUDE.md banner + MIGRATION_STATE.md + SESSION_HISTORY.md pushed a main
+❌ Sidebar hide Contactos/Notas (restrict_to_domain aplicado, sin verificar funcionamiento)
 ❌ Búsqueda global (Cmd+K) reportada como no funciona — pendiente investigar
 ❌ Validar que el panel "Tickets en Support" del side panel se renderiza (CSS selectors)
+❌ PR #10 sin mergear — main NO tiene los 30 scripts de migración (solo los docs)
 
 ## 12. Comandos de uso típico
 
@@ -159,4 +164,11 @@ python3 migration/discovery.py
 
 - Repo: `villagran-gif/sell-medinet-backend`
 - Branch: `claude/whatsapp-system-user-token-WKAZ7`
-- PR: existe (#10 originalmente), todos los commits van ahí
+- PR: #10 (open, draft, mergeable_state=dirty, 54 commits, 8772 additions)
+- Merge pendiente: necesario para que sesiones nuevas vean los 30+ scripts de migration/
+
+## 14. Para retomar
+
+1. Hacer `git checkout claude/whatsapp-system-user-token-WKAZ7` antes de cualquier laburo
+2. Si cloneás main, solo verás CLAUDE.md banner + MIGRATION_STATE.md + SESSION_HISTORY.md (los docs sobreviven)
+3. Para los scripts ejecutables, leer este doc y reescribir según necesidad O mergear PR #10
