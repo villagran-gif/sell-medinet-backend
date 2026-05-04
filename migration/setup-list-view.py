@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 """
-Pone TODAS las columnas custom (zd_*) + canonicals en la list view del FCRM
-para Contact. El usuario las verá todas y eliminará manualmente las que tengan
-problemas.
+Configura la list view del FCRM para Contact con un set MANEJABLE de columnas
+default (canonicals + zd_* mas utiles). 137 columnas hicieron crashear el
+browser. El picker permite agregar mas manualmente.
 
-Actualiza CRM View Settings id=2 (la "Lista" default).
-También cambia order_by para no usar el legacy zd_custom_contact_rut_normalizado.
-
-Idempotente: re-correr no daña.
+Idempotente.
 """
-import os, json, sys, urllib.request, urllib.parse
+import os, json, sys, urllib.request, urllib.parse, urllib.error
 
 SITE = os.environ.get("FRAPPE_CLOUD_SITE_URL", "").rstrip("/")
 KEY = os.environ.get("FRAPPE_CLOUD_API_KEY", "")
