@@ -378,6 +378,7 @@ Para Frappe: `crm.clinyco.cl` eventualmente. `sslip.io` temporal es aceptable du
 - [ ] Copia de env vars del service Render de sell-medinet-backend (Zendesk, DB).
 - [ ] Confirmar que Hetzner password sigue siendo `uxRkbmtAFFXa`.
 - [ ] Zendesk Sell API token (para backfill eventual en fase 3c).
+- [ ] `GOOGLE_OAUTH_CLIENT_ID` + `GOOGLE_OAUTH_CLIENT_SECRET` para Google SSO en Frappe CRM (procedimiento en `migration/auth-google-sso.md`, automation en `migration/setup-google-sso.py`).
 
 ---
 
