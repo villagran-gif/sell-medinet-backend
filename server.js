@@ -2,6 +2,8 @@ import express from "express";
 import { randomUUID } from "crypto";
 import { createSupportRouter } from "./support-service/index.js";
 import { createTiktokBridgeRouter } from "./tiktok-bridge/index.js";
+import { createChatwootWebhookRouter } from "./chatwoot-webhook/index.js";
+import { createSellRouter } from "./sell-service/index.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -37,6 +39,36 @@ if (process.env.TIKTOK_BRIDGE_ENABLED === "true") {
   console.log("[tiktok-bridge] mounted at /webhooks");
 } else {
   console.log("[tiktok-bridge] disabled (set TIKTOK_BRIDGE_ENABLED=true to enable)");
+}
+
+// ======================
+// sell-service (opt-in vía SELL_SERVICE_ENABLED=true)
+// Satellite que emula Zendesk Sell API v2 hacia Frappe Cloud REST.
+// Permite migrar gradualmente los 12+ surfaces de Clínyco que llaman a
+// api.getbase.com sin reescribirlos. Ver sell-service/README.md.
+// ======================
+if (process.env.SELL_SERVICE_ENABLED === "true") {
+  app.use("/sell", createSellRouter());
+  console.log("[sell-service] mounted at /sell");
+} else {
+  console.log("[sell-service] disabled (set SELL_SERVICE_ENABLED=true to enable)");
+}
+
+// ======================
+// chatwoot-webhook (opt-in vía CHATWOOT_WEBHOOK_ENABLED=true)
+// Receptor de eventos de Chatwoot. Persiste raw payloads en chatwoot.raw_events.
+// Ver chatwoot-webhook/README.md.
+// ======================
+if (process.env.CHATWOOT_WEBHOOK_ENABLED === "true") {
+  app.use(
+    "/chatwoot-webhook",
+    createChatwootWebhookRouter({
+      autoMigrate: process.env.CHATWOOT_AUTO_MIGRATE !== "false",
+    })
+  );
+  console.log("[chatwoot-webhook] mounted at /chatwoot-webhook");
+} else {
+  console.log("[chatwoot-webhook] disabled (set CHATWOOT_WEBHOOK_ENABLED=true to enable)");
 }
 
 // ======================

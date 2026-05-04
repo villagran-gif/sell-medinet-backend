@@ -9,3 +9,8 @@ npm-debug.log*
 .idea/
 coverage/
 dist/
+migration/csv-zendesk/
+migration/*.csv
+migration/__pycache__/
+__pycache__/
+*.pyc
