@@ -66,29 +66,43 @@ def main():
     cf = data.get("message", []) or []
     print(f"Current Custom Fields zd_* on Contact: {len(cf)}")
 
-    # 3. Convert Long Text → Data / Small Text
-    converted_data = 0; converted_small = 0; skipped = 0
+    # 3. Convert Long Text → Small Text → Data (Frappe permite ese path en 2 pasos)
+    converted_data = 0; converted_small = 0; skipped = 0; errors = 0
     for f in cf:
         if f["fieldtype"] != "Long Text":
             skipped += 1; continue
         ml = field_maxlen.get(f["fieldname"], 0)
         if ml <= 140:
-            new_type = "Data"
+            target = "Data"
         elif ml <= 1000:
-            new_type = "Small Text"
+            target = "Small Text"
         else:
             skipped += 1; continue
-        code, _ = http("PUT", f"/api/resource/Custom+Field/{urllib.parse.quote(f['name'], safe='')}",
-                       {"fieldtype": new_type})
+        # Step 1: Long Text → Small Text
+        code, _ = http("POST", "/api/method/frappe.client.set_value",
+                       {"doctype":"Custom Field","name":f["name"],
+                        "fieldname":"fieldtype","value":"Small Text"})
+        if code not in (200, 202):
+            errors += 1
+            print(f"  ERR step1 {f['fieldname']}: {code}")
+            continue
+        if target == "Small Text":
+            converted_small += 1
+            continue
+        # Step 2: Small Text → Data
+        code, _ = http("POST", "/api/method/frappe.client.set_value",
+                       {"doctype":"Custom Field","name":f["name"],
+                        "fieldname":"fieldtype","value":"Data"})
         if code in (200, 202):
-            if new_type == "Data": converted_data += 1
-            else: converted_small += 1
+            converted_data += 1
         else:
-            print(f"  ERR {f['name']} → {new_type}: {code}")
+            errors += 1
+            print(f"  ERR step2 {f['fieldname']}: {code}")
 
     print(f"  Long Text → Data: {converted_data}")
     print(f"  Long Text → Small Text: {converted_small}")
-    print(f"  Skipped (already Data/etc o muy largo): {skipped}")
+    print(f"  Skipped: {skipped}")
+    print(f"  Errors: {errors}")
 
 
 if __name__ == "__main__":
