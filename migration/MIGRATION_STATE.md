@@ -177,6 +177,7 @@ User confirmó: "Organizations → Pipelines" funcionó. "Clientes potenciales �
 | `link-tickets-to-deals.py` | Linkear tickets a deals via single-deal contacts |
 | `quick-filters-search.py` | Property Setters in_standard_filter |
 | `hide-column-picker.py` | Form Script hide Columnas button |
+| `set-all-users-dark-theme.py` | Setea `User.desk_theme=Dark` para todos los users habilitados + Property Setter para el default de nuevos users (idempotente, --execute) |
 
 ## 16. Next session — workflow recomendado
 
