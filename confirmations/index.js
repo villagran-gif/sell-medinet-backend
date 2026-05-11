@@ -1,11 +1,13 @@
 import { Router } from "express";
 import { runMigrations } from "./migrations/runner.js";
 import healthRouter from "./routes/health.js";
+import intakeRouter from "./routes/intake.js";
 
 export function createConfirmationsRouter({ autoMigrate = true } = {}) {
   const router = Router();
 
   router.use("/health", healthRouter);
+  router.use("/intake", intakeRouter);
 
   if (autoMigrate) {
     runMigrations()
