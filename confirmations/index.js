@@ -3,6 +3,7 @@ import { runMigrations } from "./migrations/runner.js";
 import healthRouter from "./routes/health.js";
 import intakeRouter from "./routes/intake.js";
 import processInboundRouter from "./routes/process-inbound.js";
+import tickRouter from "./routes/tick.js";
 
 export function createConfirmationsRouter({ autoMigrate = true } = {}) {
   const router = Router();
@@ -10,6 +11,7 @@ export function createConfirmationsRouter({ autoMigrate = true } = {}) {
   router.use("/health", healthRouter);
   router.use("/intake", intakeRouter);
   router.use("/process-inbound", processInboundRouter);
+  router.use("/tick", tickRouter);
 
   if (autoMigrate) {
     runMigrations()
