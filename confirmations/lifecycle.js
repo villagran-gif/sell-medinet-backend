@@ -127,6 +127,182 @@ export async function upsertAppointment(normalized) {
   return { row, created: row.created === true };
 }
 
+/**
+ * Busca la cita "más relevante" para un teléfono que acaba de mandar
+ * un mensaje. Heurística: la cita futura más cercana (o pasada por menos
+ * de 24h) que esté en un estado donde tiene sentido recibir respuesta.
+ *
+ * Devuelve null si no hay match — entonces el mensaje no se asocia a
+ * ninguna cita (clasifica igual y queda registrado en inbound_classifications
+ * para auditoría).
+ */
+export async function findAppointmentByInboundPhone(phone) {
+  if (!phone) return null;
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `
+    SELECT *
+    FROM confirmations.appointments
+    WHERE patient_phone = $1
+      AND state IN ('first_msg_sent', 'reminder_sent', 'confirmed',
+                    'reschedule_requested', 'scheduled')
+      AND appointment_at > now() - interval '24 hours'
+    ORDER BY appointment_at ASC
+    LIMIT 1
+    `,
+    [phone]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Aplica una intención clasificada a una cita y registra la transición.
+ * Transiciones del state machine MelanIA:
+ *
+ *   confirm     →  state = 'confirmed'
+ *   cancel      →  state = 'cancelled'
+ *   reschedule  →  state = 'reschedule_requested' (lifecycle externo:
+ *                  el caller debe hacer handoff HTTP a clinyco_AI)
+ *   other       →  sin cambio de estado, solo bump last_inbound_at
+ *   ambiguous   →  sin cambio de estado, solo bump last_inbound_at
+ *
+ * Returns el row actualizado.
+ */
+export async function applyIntent(appointmentId, intent) {
+  const pool = getPool();
+  const nextState = intentToState(intent);
+  const sql = nextState
+    ? `UPDATE confirmations.appointments
+         SET state = $2, last_inbound_at = now(), updated_at = now()
+       WHERE id = $1
+       RETURNING *`
+    : `UPDATE confirmations.appointments
+         SET last_inbound_at = now(), updated_at = now()
+       WHERE id = $1
+       RETURNING *`;
+  const params = nextState ? [appointmentId, nextState] : [appointmentId];
+  const { rows } = await pool.query(sql, params);
+  return rows[0] || null;
+}
+
+function intentToState(intent) {
+  switch (intent) {
+    case "confirm":
+      return STATES.CONFIRMED;
+    case "cancel":
+      return STATES.CANCELLED;
+    case "reschedule":
+      return STATES.RESCHEDULE_REQUESTED;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Marca first_msg_sent_at + transiciona scheduled→first_msg_sent y
+ * guarda los ids de Chatwoot. Idempotente: no pisa first_msg_sent_at
+ * si ya está seteado.
+ */
+export async function markFirstMessageSent({
+  appointmentId,
+  chatwootContactId,
+  chatwootConversationId,
+}) {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `
+    UPDATE confirmations.appointments
+       SET state = CASE WHEN state = 'scheduled' THEN 'first_msg_sent' ELSE state END,
+           first_msg_sent_at = COALESCE(first_msg_sent_at, now()),
+           chatwoot_contact_id = COALESCE(chatwoot_contact_id, $2),
+           chatwoot_conversation_id = COALESCE(chatwoot_conversation_id, $3),
+           updated_at = now()
+     WHERE id = $1
+     RETURNING *
+    `,
+    [appointmentId, chatwootContactId, chatwootConversationId]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Marca reminder_sent_at + transiciona a 'reminder_sent' si la cita
+ * estaba en first_msg_sent. Si ya estaba confirmed, deja el estado
+ * pero sí marca el timestamp para no reenviar.
+ */
+export async function markReminderSent({ appointmentId }) {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `
+    UPDATE confirmations.appointments
+       SET state = CASE WHEN state = 'first_msg_sent' THEN 'reminder_sent' ELSE state END,
+           reminder_sent_at = COALESCE(reminder_sent_at, now()),
+           updated_at = now()
+     WHERE id = $1
+     RETURNING *
+    `,
+    [appointmentId]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Registra una decisión del classifier en inbound_classifications.
+ */
+export async function logClassification({
+  rawEventId,
+  appointmentId,
+  intent,
+  confidence,
+  rawMessage,
+  model,
+}) {
+  const pool = getPool();
+  await pool.query(
+    `
+    INSERT INTO confirmations.inbound_classifications
+      (raw_event_id, appointment_id, intent, confidence, raw_message, model)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    `,
+    [rawEventId, appointmentId, intent, confidence, rawMessage, model]
+  );
+}
+
+/**
+ * Registra un envío outbound (template HSM). El UNIQUE parcial sobre
+ * (appointment_id, template_name) WHERE error IS NULL hace que un
+ * envío exitoso bloquee reenvíos del mismo template — idempotencia.
+ */
+export async function logOutbound({
+  appointmentId,
+  templateName,
+  templateParams,
+  chatwootMessageId,
+  dryRun,
+  error,
+}) {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `
+    INSERT INTO confirmations.outbound_messages
+      (appointment_id, template_name, template_params, chatwoot_message_id, dry_run, error)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    ON CONFLICT (appointment_id, template_name) WHERE error IS NULL
+      DO NOTHING
+    RETURNING id
+    `,
+    [
+      appointmentId,
+      templateName,
+      templateParams ? JSON.stringify(templateParams) : null,
+      chatwootMessageId,
+      !!dryRun,
+      error || null,
+    ]
+  );
+  return rows[0]?.id || null;
+}
+
 function stringOrNull(v) {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
