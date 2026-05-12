@@ -33,12 +33,15 @@ export const TEMPLATES = Object.freeze({
   /**
    * Recordatorio enviado a T-76h antes de la cita (~3 días y 4 horas).
    *
-   * Texto canónico:
-   *   "{{1}}, te recordamos tu cita de {{2}} con {{3}} el {{4}} a las
-   *    {{5}}. Si necesitas reagendar o cancelar, respóndenos por aquí.
-   *    ¡Te esperamos!"
+   * Texto canónico (ver docs/whatsapp-templates.md):
+   *   "Hola {{1}}, te recordamos tu cita de {{2}} con {{3}} el {{4}} a
+   *    las {{5}}. Si necesitas reagendar o cancelar, respóndenos por
+   *    aquí. ¡Te esperamos!"
+   *
+   * 2026-05-12: la v1 se registró por error en otro idioma y tuvo que
+   * recrearse como v2 en Spanish (CHL). En Meta BM la v1 queda inactiva.
    */
-  REMIND_76H: "cly_confirm_reminder_76h_v1",
+  REMIND_76H: "cly_confirm_reminder_76h_v2",
 });
 
 /**
