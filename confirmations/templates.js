@@ -7,15 +7,17 @@
  * se vuelve a aprobar manualmente y queda con un sufijo de versión nuevo
  * (ej. `cly_confirm_appointment_v2`).
  *
- * Pendiente al momento de este commit:
- *   - Registrar `cly_confirm_appointment_v1` en Meta BM (UTILITY, es).
- *   - Registrar `cly_confirm_reminder_76h_v1` en Meta BM (UTILITY, es).
+ * Los nombres son overridables por env var para poder rotar versiones
+ * sin redeploy:
+ *   - CHATWOOT_HSM_CONFIRM_INITIAL  (default cly_confirm_appointment_v1)
+ *   - CHATWOOT_HSM_CONFIRM_REMINDER (default cly_confirm_reminder_76h_v1)
  *
- * Mientras tanto, el chatwoot-client corre en dry-run y no envía nada
- * real — pero todo el resto del flujo (intake, clasificador, scheduler)
- * sí ejercita estas definiciones.
+ * Estado 2026-05-13: las 3 plantillas están Activas en Meta BM
+ * (cly_confirm_appointment_v1, cly_confirm_reminder_76h_v1 y _v2).
+ * Decisión: usar v1 del recordatorio. La _v2 queda como duplicado
+ * inactivo, no se referencia.
  *
- * Ver docs/whatsapp-templates.md para los textos canónicos a registrar.
+ * Ver docs/whatsapp-templates.md para los textos canónicos.
  */
 
 export const TEMPLATES = Object.freeze({
@@ -24,11 +26,12 @@ export const TEMPLATES = Object.freeze({
    *
    * Texto canónico (ver docs/whatsapp-templates.md):
    *   "Hola {{1}}, soy MelanIA de Clínyco 👋. Te confirmamos tu cita
-   *    de {{2}} con {{3}} el {{4}} a las {{5}}. ¿La tomas? Responde
+   *    de {{2}} con {{3}} el {{4}} a las {{5}}. ¿CONFIRMAS? Responde
    *    SÍ para confirmar, NO para cancelar, o REAGENDAR si quieres
    *    cambiarla."
    */
-  CONFIRM_APPOINTMENT: "cly_confirm_appointment_v1",
+  CONFIRM_APPOINTMENT:
+    process.env.CHATWOOT_HSM_CONFIRM_INITIAL || "cly_confirm_appointment_v1",
 
   /**
    * Recordatorio enviado a T-76h antes de la cita (~3 días y 4 horas).
@@ -38,10 +41,12 @@ export const TEMPLATES = Object.freeze({
    *    las {{5}}. Si necesitas reagendar o cancelar, respóndenos por
    *    aquí. ¡Te esperamos!"
    *
-   * 2026-05-12: la v1 se registró por error en otro idioma y tuvo que
-   * recrearse como v2 en Spanish (CHL). En Meta BM la v1 queda inactiva.
+   * Es INFORMATIVO: no re-pide confirmación. Regla de lifecycle:
+   * sin respuesta al recordatorio = la cita sigue confirmada (no es
+   * un fallo). Solo abre la puerta a cancel/reschedule.
    */
-  REMIND_76H: "cly_confirm_reminder_76h_v2",
+  REMIND_76H:
+    process.env.CHATWOOT_HSM_CONFIRM_REMINDER || "cly_confirm_reminder_76h_v1",
 });
 
 /**

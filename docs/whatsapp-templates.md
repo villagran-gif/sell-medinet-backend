@@ -42,7 +42,7 @@ Hola {{1}}, soy MelanIA de Clínyco 👋. Te confirmamos tu cita de {{2}} con {{
 | 4 | Fecha en formato DD/MM/YYYY (TZ Santiago) | `11/05/2026` |
 | 5 | Hora HH:MM 24h (TZ Santiago) | `17:30` |
 
-### `cly_confirm_reminder_76h_v2`
+### `cly_confirm_reminder_76h_v1`
 
 Recordatorio enviado ~76 horas antes de la cita.
 Trigger: `confirmations/scheduler` → `lifecycle.sendReminder()`.
@@ -55,7 +55,13 @@ Hola {{1}}, te recordamos tu cita de {{2}} con {{3}} el {{4}} a las {{5}}. Si ne
 
 Mismas variables que `cly_confirm_appointment_v1`.
 
-> **Nota 2026-05-12**: la `_v1` original quedó con idioma incorrecto en Meta BM y tuvo que recrearse como `_v2` en Spanish (CHL). La constante en `templates.js` apunta a `_v2`. La `_v1` puede dejarse archivada / pausada en Meta sin afectar.
+Es **informativo**: no re-pide confirmación. Regla de lifecycle: sin
+respuesta al recordatorio = la cita sigue confirmada (no es fallo).
+
+> **Nota 2026-05-13**: en Meta BM existen `_v1` y `_v2` (duplicado, texto
+> idéntico). Decisión: usar `_v1`. La constante en `templates.js` apunta a
+> `_v1` por default y es overridable con `CHATWOOT_HSM_CONFIRM_REMINDER`.
+> La `_v2` queda inactiva, no se referencia.
 
 ## Cómo registrar
 
