@@ -34,7 +34,7 @@ function requireEnv(name) {
 }
 
 function baseUrl() {
-  return (process.env.CHATWOOT_API_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
+  return (process.env.CHATWOOT_API_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
 }
 
 function accountId() {

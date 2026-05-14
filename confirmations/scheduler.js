@@ -39,6 +39,17 @@ import {
 const FIRST_MSG_DEFAULT_LIMIT = 20;
 const REMINDER_DEFAULT_LIMIT = 50;
 
+// Horas antes de la cita en que se manda el recordatorio. Overridable
+// por env (default 76). La ventana de selección es ±2h alrededor de
+// este valor para tolerar crons espaciados sin perder citas; la
+// idempotencia de logOutbound evita doble envío si la ventana se solapa.
+const REMINDER_HOURS = (() => {
+  const n = Number(process.env.CONFIRMATIONS_REMINDER_HOURS);
+  return Number.isFinite(n) && n > 0 ? n : 76;
+})();
+const REMINDER_WINDOW_LO = Math.max(1, REMINDER_HOURS - 2);
+const REMINDER_WINDOW_HI = REMINDER_HOURS + 2;
+
 /**
  * Ejecuta un tick completo: primero los 1er mensajes pendientes,
  * después los recordatorios T-76h. Devuelve summary agregado.
@@ -144,12 +155,12 @@ async function sendPendingReminders({ limit }) {
       FROM confirmations.appointments
      WHERE reminder_sent_at IS NULL
        AND state IN ('first_msg_sent', 'confirmed')
-       AND appointment_at BETWEEN (now() + interval '74 hours')
-                              AND (now() + interval '78 hours')
+       AND appointment_at BETWEEN (now() + ($2 || ' hours')::interval)
+                              AND (now() + ($3 || ' hours')::interval)
      ORDER BY appointment_at ASC
      LIMIT $1
     `,
-    [limit]
+    [limit, String(REMINDER_WINDOW_LO), String(REMINDER_WINDOW_HI)]
   );
 
   const summary = { scanned: rows.length, sent: 0, failed: 0 };

@@ -160,14 +160,15 @@ async function markProcessed(rawEventId, error) {
  * reschedule_requested igual, y el siguiente tick puede reintentar.
  */
 async function triggerRescheduleHandoff(appointment, message) {
-  const url = process.env.CLINYCO_HANDOFF_URL;
-  const token = process.env.CLINYCO_HANDOFF_TOKEN;
-  if (!url || !token) {
+  const baseUrl = process.env.CLINYCO_AI_BASE_URL;
+  const token = process.env.CLINYCO_AI_HANDOFF_TOKEN;
+  if (!baseUrl || !token) {
     console.warn(
-      "[confirmations/inbound-processor] handoff skipped — falta CLINYCO_HANDOFF_URL/TOKEN"
+      "[confirmations/inbound-processor] handoff skipped — falta CLINYCO_AI_BASE_URL/CLINYCO_AI_HANDOFF_TOKEN"
     );
     return false;
   }
+  const url = `${baseUrl.replace(/\/+$/, "")}/melania/start-from-confirmation`;
 
   try {
     const controller = new AbortController();

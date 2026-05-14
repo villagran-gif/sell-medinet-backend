@@ -84,20 +84,27 @@ Cron sugerido (Render Cron / GitHub Actions / cron VPS):
 | `CONFIRMATIONS_AUTO_MIGRATE` | no | `true` | Corre DDL al arranque. |
 | `CONFIRMATIONS_DATABASE_URL` | no | — | Si está, override de `DATABASE_URL`. |
 | `CONFIRMATIONS_INTAKE_TOKEN` | sí | — | Bearer compartido con clinyco_AI / crons. |
+| `CONFIRMATIONS_REMINDER_HOURS` | no | `76` | Horas antes de la cita para el recordatorio (ventana ±2h). |
 | `CHATWOOT_API_TOKEN` | sí† | — | Token de la cuenta 162472. |
-| `CHATWOOT_INBOX_ID` | sí† | — | ID del inbox WhatsApp en Chatwoot Cloud. |
+| `CHATWOOT_INBOX_ID` | sí† | — | ID del inbox WhatsApp en Chatwoot Cloud (`107690`). |
 | `CHATWOOT_ACCOUNT_ID` | no | `162472` | Override del account id. |
-| `CHATWOOT_API_BASE_URL` | no | `https://app.chatwoot.com` | Override (self-host). |
+| `CHATWOOT_API_URL` | no | `https://app.chatwoot.com` | Override (self-host). |
 | `CHATWOOT_DRY_RUN` | no | `true` | Setear `false` cuando los HSM estén aprobados. |
+| `CHATWOOT_HSM_CONFIRM_INITIAL` | no | `cly_confirm_appointment_v1` | Nombre del HSM de 1er mensaje. |
+| `CHATWOOT_HSM_CONFIRM_REMINDER` | no | `cly_confirm_reminder_76h_v1` | Nombre del HSM de recordatorio. |
 | `ANTHROPIC_API_KEY` | sí‡ | — | Para clasificador Haiku 4.5. |
 | `CONFIRMATIONS_CLASSIFIER_MODEL` | no | `claude-haiku-4-5-20251001` | Override de modelo. |
 | `CONFIRMATIONS_CLASSIFIER_DRY_RUN` | no | `false` | Forzar fallback heurístico. |
-| `CLINYCO_HANDOFF_URL` | sí§ | — | `https://<vps>/melania/start-from-confirmation`. |
-| `CLINYCO_HANDOFF_TOKEN` | sí§ | — | Bearer del endpoint de handoff en clinyco_AI. |
+| `CLINYCO_AI_BASE_URL` | sí§ | — | Base URL del VPS clinyco_AI. Se le agrega `/melania/start-from-confirmation`. |
+| `CLINYCO_AI_HANDOFF_TOKEN` | sí§ | — | Bearer del endpoint de handoff en clinyco_AI. |
 
 † requeridas solo cuando `CHATWOOT_DRY_RUN=false`.
 ‡ si falta, el classifier cae al fallback heurístico (cubre >80%).
 § si falta, los reschedule quedan registrados pero no disparan el handoff.
+
+En el lado de **clinyco_AI** (VPS), el endpoint receptor lee
+`CONFIRMATIONS_HANDOFF_TOKEN` — debe tener el **mismo valor** que
+`CLINYCO_AI_HANDOFF_TOKEN` de este repo.
 
 ## Pendientes externos
 
