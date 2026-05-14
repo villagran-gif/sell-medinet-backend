@@ -4,6 +4,7 @@ import { createSupportRouter } from "./support-service/index.js";
 import { createTiktokBridgeRouter } from "./tiktok-bridge/index.js";
 import { createChatwootWebhookRouter } from "./chatwoot-webhook/index.js";
 import { createSellRouter } from "./sell-service/index.js";
+import { createConfirmationsRouter } from "./confirmations/index.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -69,6 +70,23 @@ if (process.env.CHATWOOT_WEBHOOK_ENABLED === "true") {
   console.log("[chatwoot-webhook] mounted at /chatwoot-webhook");
 } else {
   console.log("[chatwoot-webhook] disabled (set CHATWOOT_WEBHOOK_ENABLED=true to enable)");
+}
+
+// ======================
+// confirmations (opt-in vía CONFIRMATIONS_ENABLED=true)
+// Sistema MelanIA: confirmaciones de citas Medinet vía Chatwoot Cloud.
+// Reemplaza CEROAI. Ver confirmations/README.md.
+// ======================
+if (process.env.CONFIRMATIONS_ENABLED === "true") {
+  app.use(
+    "/confirmations",
+    createConfirmationsRouter({
+      autoMigrate: process.env.CONFIRMATIONS_AUTO_MIGRATE !== "false",
+    })
+  );
+  console.log("[confirmations] mounted at /confirmations");
+} else {
+  console.log("[confirmations] disabled (set CONFIRMATIONS_ENABLED=true to enable)");
 }
 
 // ======================
