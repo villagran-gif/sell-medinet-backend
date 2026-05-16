@@ -21,6 +21,10 @@
 
 const DEFAULT_BASE_URL = "https://app.chatwoot.com";
 const DEFAULT_ACCOUNT_ID = "162472";
+// Defaults para HSM templates: Meta los exige junto con `name` para enviar.
+// Override por env si los templates cambian de categoría o idioma.
+const DEFAULT_TEMPLATE_CATEGORY = process.env.CHATWOOT_HSM_CATEGORY || "UTILITY";
+const DEFAULT_TEMPLATE_LANGUAGE = process.env.CHATWOOT_HSM_LANGUAGE || "es";
 
 export function isDryRun() {
   // Default: true. Para activar tráfico real, setear CHATWOOT_DRY_RUN=false.
@@ -174,9 +178,7 @@ export async function startConversationWithTemplate({
       contact_id: contactId,
       message: {
         content: fallbackText || "",
-        template_params: templateParams
-          ? { name: templateName, ...templateParams }
-          : { name: templateName },
+        template_params: buildTemplateParams(templateName, templateParams),
       },
     },
   });
@@ -220,9 +222,7 @@ export async function sendTemplateInConversation({
       body: {
         content: fallbackText || "",
         message_type: "outgoing",
-        template_params: templateParams
-          ? { name: templateName, ...templateParams }
-          : { name: templateName },
+        template_params: buildTemplateParams(templateName, templateParams),
       },
     }
   );
@@ -231,4 +231,29 @@ export async function sendTemplateInConversation({
 
 function normalizePhone(p) {
   return String(p || "").replace(/[^\d+]/g, "");
+}
+
+/**
+ * Construye el `template_params` con la shape que Chatwoot requiere
+ * para que efectivamente despache un HSM template (en vez de un
+ * mensaje de texto plano).
+ *
+ *   {
+ *     "name": "cly_confirm_appointment_v1",
+ *     "category": "UTILITY",
+ *     "language": "es",
+ *     "processed_params": { "body": { "1": "Juan", "2": "..." } }
+ *   }
+ *
+ * `templateParams` viene de templates.js::buildConfirmParams() y trae
+ * solo `processed_params` ya envuelto en `body`. Aquí le agregamos
+ * `name`, `category` y `language` desde la config.
+ */
+function buildTemplateParams(templateName, templateParams) {
+  return {
+    name: templateName,
+    category: DEFAULT_TEMPLATE_CATEGORY,
+    language: DEFAULT_TEMPLATE_LANGUAGE,
+    ...(templateParams || {}),
+  };
 }
