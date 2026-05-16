@@ -77,20 +77,33 @@ async function chatwootFetch(path, { method = "GET", body } = {}) {
 }
 
 /**
+ * Convierte un teléfono E.164 al `source_id` que Chatwoot exige para
+ * inboxes WhatsApp: solo dígitos, regex `^\d{1,15}$`. Strippea el `+`
+ * y cualquier separador. El `phone_number` del contacto sí lleva `+`,
+ * pero `source_id` (que linkea el contacto al canal WhatsApp) es
+ * digits-only — sin esta conversión, POST /conversations devuelve 422
+ * "invalid source id for whatsapp inbox".
+ */
+function toChatwootSourceId(phone) {
+  return String(phone || "").replace(/\D/g, "");
+}
+
+/**
  * Busca un contacto por teléfono; si no existe lo crea.
  * Devuelve `{ id, sourceId }` donde sourceId es el identificador
- * que Chatwoot usa para conectar al inbox WhatsApp (el teléfono E.164).
+ * que Chatwoot exige para inboxes WhatsApp (E.164 sin `+`).
  *
  * En modo dry-run devuelve un id sintético basado en el teléfono.
  */
 export async function findOrCreateContact({ phone, name, email, identifier }) {
   if (!phone) throw new Error("findOrCreateContact: phone requerido");
+  const sourceId = toChatwootSourceId(phone);
 
   if (isDryRun()) {
     console.log("[chatwoot-client/dry-run] findOrCreateContact", { phone, name, email });
     return {
       id: `dry_run_contact_${phone}`,
-      sourceId: phone,
+      sourceId,
       dryRun: true,
     };
   }
@@ -104,7 +117,7 @@ export async function findOrCreateContact({ phone, name, email, identifier }) {
     (c) => normalizePhone(c.phone_number) === normalizePhone(phone)
   );
   if (found) {
-    return { id: found.id, sourceId: phone };
+    return { id: found.id, sourceId };
   }
 
   // 2) Crear.
@@ -119,7 +132,7 @@ export async function findOrCreateContact({ phone, name, email, identifier }) {
     },
   });
   const contact = created?.payload?.contact || created?.contact || created;
-  return { id: contact.id, sourceId: phone };
+  return { id: contact.id, sourceId };
 }
 
 /**
