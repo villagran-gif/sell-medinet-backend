@@ -21,6 +21,16 @@
 
 const DEFAULT_BASE_URL = "https://app.chatwoot.com";
 const DEFAULT_ACCOUNT_ID = "162472";
+// Defaults para HSM templates: Meta exige `name + category + language`
+// junto con `processed_params`. Sin estos, Chatwoot no triggea el flujo
+// de template y manda el `content` como mensaje plano → Meta lo rechaza
+// por la ventana 24h. Overridables por env para futuras plantillas.
+const DEFAULT_TEMPLATE_CATEGORY = process.env.CHATWOOT_HSM_CATEGORY || "UTILITY";
+// es_CL = Spanish (Chile). Las plantillas Clínyco están registradas con
+// ese language code en Meta, y Chatwoot las cachea con ese mismo code.
+// Usar "es" genérico hace que Chatwoot no encuentre el match y mande
+// `language.code: null` a Meta → error de schema.
+const DEFAULT_TEMPLATE_LANGUAGE = process.env.CHATWOOT_HSM_LANGUAGE || "es_CL";
 
 export function isDryRun() {
   // Default: true. Para activar tráfico real, setear CHATWOOT_DRY_RUN=false.
@@ -174,9 +184,7 @@ export async function startConversationWithTemplate({
       contact_id: contactId,
       message: {
         content: fallbackText || "",
-        template_params: templateParams
-          ? { name: templateName, ...templateParams }
-          : { name: templateName },
+        template_params: buildTemplateParams(templateName, templateParams),
       },
     },
   });
@@ -220,9 +228,7 @@ export async function sendTemplateInConversation({
       body: {
         content: fallbackText || "",
         message_type: "outgoing",
-        template_params: templateParams
-          ? { name: templateName, ...templateParams }
-          : { name: templateName },
+        template_params: buildTemplateParams(templateName, templateParams),
       },
     }
   );
@@ -231,4 +237,29 @@ export async function sendTemplateInConversation({
 
 function normalizePhone(p) {
   return String(p || "").replace(/[^\d+]/g, "");
+}
+
+/**
+ * Construye el `template_params` con la shape que Chatwoot requiere
+ * para que efectivamente despache un HSM template (en vez de mandar
+ * el `content` como mensaje plano).
+ *
+ *   {
+ *     "name": "cly_confirm_appointment_v1",
+ *     "category": "UTILITY",
+ *     "language": "es_CL",
+ *     "processed_params": { "body": { "1": "Juan", "2": "..." } }
+ *   }
+ *
+ * `templateParams` viene de templates.js::buildConfirmParams() ya con
+ * `processed_params` envuelto en `body`. Aquí inyectamos `name`,
+ * `category` y `language` desde la config.
+ */
+function buildTemplateParams(templateName, templateParams) {
+  return {
+    name: templateName,
+    category: DEFAULT_TEMPLATE_CATEGORY,
+    language: DEFAULT_TEMPLATE_LANGUAGE,
+    ...(templateParams || {}),
+  };
 }

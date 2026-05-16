@@ -58,11 +58,13 @@ export const TEMPLATES = Object.freeze({
 export function buildConfirmParams(appointment) {
   return {
     processed_params: {
-      1: shortFirstName(appointment.patient_name),
-      2: appointment.specialty || "su atención",
-      3: appointment.professional || "su profesional",
-      4: formatDate(appointment.appointment_at),
-      5: formatTime(appointment.appointment_at),
+      body: {
+        1: shortFirstName(appointment.patient_name),
+        2: appointment.specialty || "su atención",
+        3: appointment.professional || "su profesional",
+        4: formatDate(appointment.appointment_at),
+        5: formatTime(appointment.appointment_at),
+      },
     },
   };
 }
@@ -73,11 +75,13 @@ export function buildConfirmParams(appointment) {
 export function buildReminderParams(appointment) {
   return {
     processed_params: {
-      1: shortFirstName(appointment.patient_name),
-      2: appointment.specialty || "su atención",
-      3: appointment.professional || "su profesional",
-      4: formatDate(appointment.appointment_at),
-      5: formatTime(appointment.appointment_at),
+      body: {
+        1: shortFirstName(appointment.patient_name),
+        2: appointment.specialty || "su atención",
+        3: appointment.professional || "su profesional",
+        4: formatDate(appointment.appointment_at),
+        5: formatTime(appointment.appointment_at),
+      },
     },
   };
 }
