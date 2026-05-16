@@ -235,6 +235,38 @@ export async function sendTemplateInConversation({
   return { messageId: resp?.id ?? null };
 }
 
+/**
+ * Envía un mensaje de TEXTO PLANO (no template) en una conversación
+ * existente. Funciona solo si la ventana 24h está abierta (paciente
+ * respondió hace < 24h). MelanIA lo usa para los acuses de recibo
+ * después de procesar un intent (confirm/cancel/reschedule/ambiguous).
+ *
+ * Si la conversación está cerrada por inactividad, Meta lo rechaza —
+ * habría que mandar un HSM. Pero para acuses post-respuesta, siempre
+ * vamos a estar dentro de la ventana.
+ */
+export async function sendTextMessage({ conversationId, content }) {
+  if (!conversationId) throw new Error("sendTextMessage: conversationId requerido");
+  if (!content) throw new Error("sendTextMessage: content requerido");
+
+  if (isDryRun()) {
+    console.log("[chatwoot-client/dry-run] sendTextMessage", {
+      conversationId,
+      content: content.slice(0, 120),
+    });
+    return { messageId: `dry_run_msg_text_${Date.now()}`, dryRun: true };
+  }
+
+  const resp = await chatwootFetch(`/conversations/${conversationId}/messages`, {
+    method: "POST",
+    body: {
+      content,
+      message_type: "outgoing",
+    },
+  });
+  return { messageId: resp?.id ?? null };
+}
+
 function normalizePhone(p) {
   return String(p || "").replace(/[^\d+]/g, "");
 }

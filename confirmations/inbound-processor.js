@@ -22,6 +22,7 @@ import {
   applyIntent,
   logClassification,
 } from "./lifecycle.js";
+import { sendAcknowledgment } from "./acknowledgments.js";
 
 const HANDOFF_TIMEOUT_MS = 8_000;
 
@@ -47,6 +48,7 @@ export async function processInboundQueue({ limit = 50 } = {}) {
     classified: 0,
     matched: 0,
     handoffs: 0,
+    acked: 0,
     skipped: 0,
     errors: 0,
   };
@@ -58,6 +60,7 @@ export async function processInboundQueue({ limit = 50 } = {}) {
       if (result.classified) summary.classified++;
       if (result.matchedAppointment) summary.matched++;
       if (result.handoff) summary.handoffs++;
+      if (result.acked) summary.acked++;
     } catch (err) {
       summary.errors++;
       await markProcessed(ev.id, err.message);
@@ -90,10 +93,23 @@ async function processOne(ev) {
   });
 
   let handoff = false;
+  let acked = false;
   if (appointment) {
-    await applyIntent(appointment.id, decision.intent);
+    const updated = await applyIntent(appointment.id, decision.intent);
     if (decision.intent === INTENTS.RESCHEDULE) {
       handoff = await triggerRescheduleHandoff(appointment, message);
+    }
+    // Acuse al paciente — texto plano en la conversación (ventana 24h
+    // ya abierta porque el paciente acaba de responder). Best-effort:
+    // si falla, queda registrada la transición igual.
+    try {
+      const ackResult = await sendAcknowledgment(updated || appointment, decision.intent);
+      acked = !!ackResult?.sent;
+    } catch (err) {
+      console.error(
+        `[confirmations/inbound-processor] ack para appointment ${appointment.id} falló:`,
+        err.message
+      );
     }
   }
 
@@ -102,6 +118,7 @@ async function processOne(ev) {
     classified: true,
     matchedAppointment: !!appointment,
     handoff,
+    acked,
   };
 }
 

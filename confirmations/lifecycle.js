@@ -49,6 +49,7 @@ export function validateIntakePayload(body) {
     externalId,
     branchId,
     branchName: stringOrNull(body.branch_name),
+    branchAddress: stringOrNull(body.branch_address),
     specialty: stringOrNull(body.specialty),
     professional: stringOrNull(body.professional),
     appointmentAt,
@@ -78,19 +79,22 @@ export async function upsertAppointment(normalized) {
   const { rows } = await pool.query(
     `
     INSERT INTO confirmations.appointments (
-      external_id, branch_id, branch_name, specialty, professional,
+      external_id, branch_id, branch_name, branch_address,
+      specialty, professional,
       appointment_at, duration_min, medinet_state,
       patient_run, patient_name, patient_phone, patient_email,
       raw, state
     ) VALUES (
-      $1, $2, $3, $4, $5,
-      $6, $7, $8,
-      $9, $10, $11, $12,
-      $13, $14
+      $1, $2, $3, $4,
+      $5, $6,
+      $7, $8, $9,
+      $10, $11, $12, $13,
+      $14, $15
     )
     ON CONFLICT (external_id) DO UPDATE SET
       branch_id       = EXCLUDED.branch_id,
       branch_name     = EXCLUDED.branch_name,
+      branch_address  = EXCLUDED.branch_address,
       specialty       = EXCLUDED.specialty,
       professional    = EXCLUDED.professional,
       appointment_at  = EXCLUDED.appointment_at,
@@ -110,6 +114,7 @@ export async function upsertAppointment(normalized) {
       normalized.externalId,
       normalized.branchId,
       normalized.branchName,
+      normalized.branchAddress,
       normalized.specialty,
       normalized.professional,
       normalized.appointmentAt,
