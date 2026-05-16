@@ -28,17 +28,34 @@ const HANDOFF_TIMEOUT_MS = 8_000;
 
 /**
  * Procesa hasta `limit` eventos pendientes. Devuelve un resumen.
+ *
+ * Atomic claim con FOR UPDATE SKIP LOCKED: reserva las filas para
+ * este processor saltándose las ya bloqueadas por otra invocación
+ * concurrente. Resuelve la race donde 2+ auto-triggers del webhook
+ * agarraban el mismo evento y lo clasificaban 2 veces (visible en
+ * el test live: respuestas como "SI" generaban 2 acks).
+ *
+ * Como el UPDATE setea processed_at de una, processOne ya no necesita
+ * llamar markProcessed al final — el evento ya está marcado.
  */
 export async function processInboundQueue({ limit = 50 } = {}) {
   const pool = getPool();
   const { rows } = await pool.query(
     `
-    SELECT id, event_type, payload
-      FROM chatwoot.raw_events
-     WHERE processed_at IS NULL
-       AND event_type = 'message_created'
-     ORDER BY received_at ASC
-     LIMIT $1
+    WITH next AS (
+      SELECT id
+        FROM chatwoot.raw_events
+       WHERE processed_at IS NULL
+         AND event_type = 'message_created'
+       ORDER BY received_at ASC
+       LIMIT $1
+         FOR UPDATE SKIP LOCKED
+    )
+    UPDATE chatwoot.raw_events r
+       SET processed_at = now()
+      FROM next
+     WHERE r.id = next.id
+    RETURNING r.id, r.event_type, r.payload
     `,
     [limit]
   );
@@ -74,9 +91,10 @@ export async function processInboundQueue({ limit = 50 } = {}) {
 }
 
 async function processOne(ev) {
+  // Nota: el evento YA está marcado como processed por el atomic claim
+  // en processInboundQueue. No volvemos a llamar markProcessed.
   const message = extractMessage(ev.payload);
   if (!message) {
-    await markProcessed(ev.id, null);
     return { skipped: true };
   }
 
@@ -113,7 +131,6 @@ async function processOne(ev) {
     }
   }
 
-  await markProcessed(ev.id, null);
   return {
     classified: true,
     matchedAppointment: !!appointment,
