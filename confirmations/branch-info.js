@@ -14,7 +14,7 @@
 export const BRANCH_MAPS = Object.freeze({
   38: "https://maps.app.goo.gl/YxcA8h9rrqCpEA1cA", // Hospital Militar del Norte (Gral. Borgoño 957, Antofagasta)
   39: "https://maps.app.goo.gl/aTLwDrryP69Wbfkv6", // Antofagasta Mall Arauco
-  41: "https://maps.app.goo.gl/sGCLtkuo2g6NxtAq9", // Santiago (Cencolap)
+  41: "https://maps.app.goo.gl/7K6w4458n8CgnQQ97", // Santiago (Clínica Apoquindo)
 });
 
 // Extras estáticos (parking, accesos). Se agregan al mensaje de confirmación.
