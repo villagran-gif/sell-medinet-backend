@@ -10,13 +10,7 @@
  */
 
 import { sendTextMessage } from "./chatwoot-client.js";
-
-// Extras estáticos por sucursal: info no estándar de Medinet que vale
-// la pena agregar al mensaje de confirmación (parking, accesos, etc.).
-// Si una sucursal cambia, actualizar acá. Map keyed por branch_id.
-const BRANCH_EXTRAS = {
-  39: "🅿️ Contamos con 150 estacionamientos subterráneos (ingreso al final de la calle lateral).",
-};
+import { branchExtras, branchMapLink } from "./branch-info.js";
 
 /**
  * Construye y envía el acuse al paciente.
@@ -100,9 +94,13 @@ function buildConfirmAck(appointment, name) {
   if (appointment.branch_address) {
     lines.push(appointment.branch_address);
   }
+  const map = branchMapLink(appointment.branch_id);
+  if (map) {
+    lines.push(`🗺️ Cómo llegar: ${map}`);
+  }
 
   // Extras de sucursal (parking, accesos, etc.)
-  const extras = BRANCH_EXTRAS[appointment.branch_id];
+  const extras = branchExtras(appointment.branch_id);
   if (extras) {
     lines.push("");
     lines.push(extras);

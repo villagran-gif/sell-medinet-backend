@@ -1,5 +1,6 @@
 /**
- * Scheduler outbound: 1er mensaje y recordatorio T-76h.
+ * Scheduler outbound: 1er mensaje (al agendar) + 3 recordatorios
+ * (T-72h, T-24h, T-4h), cada uno con dirección y link de mapa.
  *
  * No usa setInterval interno; expone `tick({ limit })` que ejecuta
  * una pasada. Un cron externo (Render Cron, GitHub Actions, etc.)
@@ -7,14 +8,17 @@
  *
  * Idempotencia:
  *   - El UNIQUE parcial (appointment_id, template_name) WHERE error IS NULL
- *     en outbound_messages bloquea reenvíos del mismo template.
- *   - Las transiciones markFirstMessageSent / markReminderSent usan
+ *     en outbound_messages bloquea reenvíos del mismo template. Cada
+ *     recordatorio loguea con template_name `<REMINDER>:<kind>` para que
+ *     las 3 ventanas no colisionen entre sí.
+ *   - Las transiciones markFirstMessageSent / markReminderKindSent usan
  *     COALESCE para no pisar timestamps existentes.
- *   - El WHERE de selección filtra por state + reminder_sent_at IS NULL.
+ *   - Cada ventana filtra por su propia columna reminder_<kind>_sent_at.
  *
- * Ventana T-76h: usamos [appointment_at - 78h, appointment_at - 74h]
- * para tolerar cron cada hora o dos sin perder citas. La idempotencia
- * de logOutbound evita doble envío si la ventana se solapa.
+ * Anti-colisión 1er mensaje vs recordatorio: una cita solo entra a
+ * ventana de recordatorio si su first_msg_sent_at tiene al menos
+ * REMINDER_MIN_GAP_HOURS de antigüedad, evitando confirmación +
+ * recordatorio en el mismo tick para citas creadas muy cerca de su fecha.
  */
 
 import { getPool } from "./db.js";
@@ -32,35 +36,48 @@ import {
 } from "./templates.js";
 import {
   markFirstMessageSent,
-  markReminderSent,
+  markReminderKindSent,
   logOutbound,
 } from "./lifecycle.js";
 
 const FIRST_MSG_DEFAULT_LIMIT = 20;
 const REMINDER_DEFAULT_LIMIT = 50;
 
-// Horas antes de la cita en que se manda el recordatorio. Overridable
-// por env (default 76). La ventana de selección es ±2h alrededor de
-// este valor para tolerar crons espaciados sin perder citas; la
-// idempotencia de logOutbound evita doble envío si la ventana se solapa.
-const REMINDER_HOURS = (() => {
-  const n = Number(process.env.CONFIRMATIONS_REMINDER_HOURS);
-  return Number.isFinite(n) && n > 0 ? n : 76;
+// Gap mínimo entre el 1er mensaje y cualquier recordatorio, para que NO
+// salgan en el mismo tick cuando una cita se crea muy cerca de su fecha.
+// Overridable por env (default 2h).
+const REMINDER_MIN_GAP_HOURS = (() => {
+  const n = Number(process.env.CONFIRMATIONS_REMINDER_MIN_GAP_HOURS);
+  return Number.isFinite(n) && n > 0 ? n : 2;
 })();
-const REMINDER_WINDOW_LO = Math.max(1, REMINDER_HOURS - 2);
-const REMINDER_WINDOW_HI = REMINDER_HOURS + 2;
+
+// Definición de las 3 ventanas de recordatorio. Cada una cubre un rango
+// de horas-hasta-la-cita disjunto (no se solapan), y se trackea con su
+// propia columna para idempotencia independiente.
+//   72h → cita entre 24h y 72h en el futuro
+//   24h → cita entre 4h y 24h
+//   4h  → cita entre 0h y 4h
+const REMINDER_WINDOWS = [
+  { kind: "72h", column: "reminder_72h_sent_at", loHours: 24, hiHours: 72, timeframe: "es en los próximos días" },
+  { kind: "24h", column: "reminder_24h_sent_at", loHours: 4,  hiHours: 24, timeframe: "es mañana" },
+  { kind: "4h",  column: "reminder_4h_sent_at",  loHours: 0,  hiHours: 4,  timeframe: "es hoy, en unas horas" },
+];
 
 /**
- * Ejecuta un tick completo: primero los 1er mensajes pendientes,
- * después los recordatorios T-76h. Devuelve summary agregado.
+ * Ejecuta un tick completo: 1er mensajes pendientes + los 3 recordatorios.
  */
 export async function tick({ firstMsgLimit, reminderLimit } = {}) {
   const first = await sendPendingFirstMessages({
     limit: firstMsgLimit ?? FIRST_MSG_DEFAULT_LIMIT,
   });
-  const reminders = await sendPendingReminders({
-    limit: reminderLimit ?? REMINDER_DEFAULT_LIMIT,
-  });
+
+  const reminders = {};
+  for (const win of REMINDER_WINDOWS) {
+    reminders[win.kind] = await sendRemindersForWindow(win, {
+      limit: reminderLimit ?? REMINDER_DEFAULT_LIMIT,
+    });
+  }
+
   return {
     dry_run: chatwootDryRun(),
     first_messages: first,
@@ -145,38 +162,52 @@ async function sendFirstMessageFor(apt) {
 }
 
 // ----------------------------------------------------------------
-// Recordatorio T-76h
+// Recordatorios (T-72h / T-24h / T-4h)
 // ----------------------------------------------------------------
-async function sendPendingReminders({ limit }) {
+//
+// Genérico: una sola función cubre las 3 ventanas. `win` trae el rango
+// de horas-hasta-la-cita, la columna de tracking y el timeframe textual.
+//
+// Anti-colisión: exigimos que el 1er mensaje se haya mandado hace al
+// menos REMINDER_MIN_GAP_HOURS, así una cita recién creada muy cerca de
+// su fecha NO dispara confirmación + recordatorio en el mismo tick.
+async function sendRemindersForWindow(win, { limit }) {
   const pool = getPool();
   const { rows } = await pool.query(
     `
     SELECT *
       FROM confirmations.appointments
-     WHERE reminder_sent_at IS NULL
+     WHERE ${win.column} IS NULL
        AND state IN ('first_msg_sent', 'confirmed')
-       AND appointment_at BETWEEN (now() + ($2 || ' hours')::interval)
-                              AND (now() + ($3 || ' hours')::interval)
+       AND first_msg_sent_at IS NOT NULL
+       AND first_msg_sent_at < now() - ($4 || ' hours')::interval
+       AND appointment_at >= (now() + ($2 || ' hours')::interval)
+       AND appointment_at <  (now() + ($3 || ' hours')::interval)
      ORDER BY appointment_at ASC
      LIMIT $1
     `,
-    [limit, String(REMINDER_WINDOW_LO), String(REMINDER_WINDOW_HI)]
+    [
+      limit,
+      String(win.loHours),
+      String(win.hiHours),
+      String(REMINDER_MIN_GAP_HOURS),
+    ]
   );
 
   const summary = { scanned: rows.length, sent: 0, failed: 0 };
   for (const apt of rows) {
     try {
-      await sendReminderFor(apt);
+      await sendReminderFor(apt, win);
       summary.sent++;
     } catch (err) {
       summary.failed++;
       console.error(
-        `[confirmations/scheduler] reminder appointment ${apt.id} failed:`,
+        `[confirmations/scheduler] reminder ${win.kind} appointment ${apt.id} failed:`,
         err.message
       );
       await logOutbound({
         appointmentId: apt.id,
-        templateName: TEMPLATES.REMIND_76H,
+        templateName: `${TEMPLATES.REMINDER}:${win.kind}`,
         templateParams: null,
         chatwootMessageId: null,
         dryRun: chatwootDryRun(),
@@ -187,24 +218,22 @@ async function sendPendingReminders({ limit }) {
   return summary;
 }
 
-async function sendReminderFor(apt) {
-  const params = buildReminderParams(apt);
-  const fallback = buildFallbackText(apt, "remind");
+async function sendReminderFor(apt, win) {
+  const params = buildReminderParams(apt, win.timeframe);
+  const fallback = buildFallbackText(apt, "remind", win.timeframe);
 
   let messageId = null;
   if (apt.chatwoot_conversation_id) {
     // La conversación ya existe del 1er mensaje — reusarla.
     const r = await sendTemplateInConversation({
       conversationId: apt.chatwoot_conversation_id,
-      templateName: TEMPLATES.REMIND_76H,
+      templateName: TEMPLATES.REMINDER,
       templateParams: params,
       fallbackText: fallback,
     });
     messageId = r.messageId;
   } else {
-    // Edge case: nunca se mandó el 1er mensaje pero la cita llegó
-    // tan cerca que ya cae en ventana de recordatorio. Mandar el
-    // recordatorio como si fuera primer contacto.
+    // Edge case: no hay conversación previa. Abrir una nueva.
     const contact = await findOrCreateContact({
       phone: apt.patient_phone,
       name: apt.patient_name,
@@ -214,7 +243,7 @@ async function sendReminderFor(apt) {
     const r = await startConversationWithTemplate({
       contactId: contact.id,
       sourceId: contact.sourceId,
-      templateName: TEMPLATES.REMIND_76H,
+      templateName: TEMPLATES.REMINDER,
       templateParams: params,
       fallbackText: fallback,
     });
@@ -226,15 +255,17 @@ async function sendReminderFor(apt) {
     });
   }
 
+  // template_name distinto por ventana → el UNIQUE parcial de outbound
+  // permite registrar los 3 recordatorios sin colisionar entre sí.
   await logOutbound({
     appointmentId: apt.id,
-    templateName: TEMPLATES.REMIND_76H,
+    templateName: `${TEMPLATES.REMINDER}:${win.kind}`,
     templateParams: params,
     chatwootMessageId: numericOrNull(messageId),
     dryRun: chatwootDryRun(),
   });
 
-  await markReminderSent({ appointmentId: apt.id });
+  await markReminderKindSent({ appointmentId: apt.id, column: win.column });
 }
 
 function numericOrNull(v) {
