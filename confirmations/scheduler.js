@@ -161,6 +161,53 @@ async function sendFirstMessageFor(apt) {
   });
 }
 
+/**
+ * Envía el 1er mensaje de UNA cita al instante (no espera al cron tick).
+ * Lo llama el intake apenas se crea una cita nueva, para que la
+ * confirmación llegue inmediatamente.
+ *
+ * Re-chequea los mismos guards que sendPendingFirstMessages (state,
+ * first_msg_sent_at, cita futura) → idempotente y seguro aunque el tick
+ * corra en paralelo. Respeta CHATWOOT_DRY_RUN igual que el resto.
+ *
+ * Returns { sent: boolean, skipped?: string }.
+ */
+export async function triggerFirstMessage({ appointmentId }) {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `
+    SELECT *
+      FROM confirmations.appointments
+     WHERE id = $1
+       AND state = 'scheduled'
+       AND first_msg_sent_at IS NULL
+       AND appointment_at > now()
+    `,
+    [appointmentId]
+  );
+  const apt = rows[0];
+  if (!apt) return { sent: false, skipped: "no_pendiente" };
+
+  try {
+    await sendFirstMessageFor(apt);
+    return { sent: true };
+  } catch (err) {
+    console.error(
+      `[confirmations/scheduler] trigger first_msg appointment ${apt.id} failed:`,
+      err.message
+    );
+    await logOutbound({
+      appointmentId: apt.id,
+      templateName: TEMPLATES.CONFIRM_APPOINTMENT,
+      templateParams: null,
+      chatwootMessageId: null,
+      dryRun: chatwootDryRun(),
+      error: err.message.slice(0, 500),
+    });
+    return { sent: false, skipped: "error" };
+  }
+}
+
 // ----------------------------------------------------------------
 // Recordatorios (T-72h / T-24h / T-4h)
 // ----------------------------------------------------------------

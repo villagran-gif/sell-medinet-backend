@@ -52,6 +52,15 @@ router.post("/", requireBearer, async (req, res) => {
 
   try {
     const { row, created } = await upsertAppointment(normalized);
+
+    // Envío inmediato del 1er mensaje: apenas se crea una cita nueva
+    // disparamos la confirmación sin esperar al cron tick. Fire-and-forget
+    // (no bloquea la respuesta del intake). Idempotente y respeta DRY_RUN.
+    // Opt-out con CONFIRMATIONS_INTAKE_AUTOSEND=false.
+    if (created && process.env.CONFIRMATIONS_INTAKE_AUTOSEND !== "false") {
+      autoSendFirstMessage(row.id);
+    }
+
     return res.status(created ? 201 : 200).json({
       status: "ok",
       created,
@@ -69,5 +78,25 @@ router.post("/", requireBearer, async (req, res) => {
     });
   }
 });
+
+// Dispara el 1er mensaje en background. Import dinámico para no acoplar el
+// intake al scheduler en tiempo de carga. Errores se loguean, no rompen nada.
+function autoSendFirstMessage(appointmentId) {
+  import("../scheduler.js")
+    .then(({ triggerFirstMessage }) => triggerFirstMessage({ appointmentId }))
+    .then((r) => {
+      if (r.sent) {
+        console.log(
+          `[confirmations/intake] autosend 1er mensaje appointment ${appointmentId} OK`
+        );
+      }
+    })
+    .catch((err) => {
+      console.error(
+        `[confirmations/intake] autosend appointment ${appointmentId} failed:`,
+        err.message
+      );
+    });
+}
 
 export default router;
