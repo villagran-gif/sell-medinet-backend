@@ -119,13 +119,18 @@ def normalize_rut(v):
     return s if 7 <= len(s) <= 10 else None
 
 
+# Owners cuyo User canónico cambió (ej: merge de dr.villagran → villagran).
+OWNER_REMAP = {"dr.villagran@clinyco.cl": "villagran@clinyco.cl"}
+
+
 def _email_for_owner(name):
     """Replica de schema-setup.email_from_name. Returns email used to create User."""
     n = name.replace(" - Deleted", "").strip().lower()
     n = re.sub(r"\s+", ".", n)
     n = re.sub(r"[^a-z0-9._-]", "", n)
     n = re.sub(r"\.+", ".", n).strip(".")
-    return f"{n or 'user'}@clinyco.cl"
+    em = f"{n or 'user'}@clinyco.cl"
+    return OWNER_REMAP.get(em, em)
 
 
 def load_map(name):
@@ -239,7 +244,7 @@ def translate_generic(row, doctype, id_field, source_id_col, contact_map=None):
         date = (row.get("date") or "").strip()
         if date: doc["due_date"] = date.replace("T", " ").split(".")[0][:19]
         done = (row.get("done_at") or "").strip()
-        doc["status"] = "Done" if done else "Backlog"
+        doc["status"] = "Realizada" if done else "Pendiente"
         owner = (row.get("owner") or "").strip()
         if owner: doc["assigned_to"] = _email_for_owner(owner)
         rt = (row.get("taskable_type") or "").strip()
@@ -273,7 +278,7 @@ def upsert(doctype, id_field, doc):
     if existing:
         # PATCH all fields
         body = {k: v for k, v in doc.items() if k != "doctype"}
-        c, r = http("PUT", f"/api/resource/{urllib.parse.quote(doctype)}/{urllib.parse.quote(existing, safe='')}", body)
+        c, r = http("PUT", f"/api/resource/{urllib.parse.quote(doctype)}/{urllib.parse.quote(str(existing), safe='')}", body)
         if c in (200, 202): return "UPD", existing
         return "ERR", json.dumps(r)[:200]
     c, r = http("POST", "/api/method/frappe.client.insert", {"doc": doc})
