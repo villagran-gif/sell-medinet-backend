@@ -1,21 +1,15 @@
 /**
- * Procesador de cola de mensajes inbound desde Chatwoot.
+ * Handler MelanIA de confirmaciones — un consumidor del chatwoot-dispatcher.
  *
- * Lee `chatwoot.raw_events` (poblada por el módulo chatwoot-webhook),
- * filtra eventos `message_created` con dirección incoming, clasifica
- * el texto con Haiku 4.5 y aplica la transición correspondiente en
- * `confirmations.appointments`.
+ * `handleInboundEvent(ev)` recibe un `message_created` ya reclamado por el
+ * dispatcher (que es quien posee el claim FOR UPDATE SKIP LOCKED y el cursor
+ * `processed_at`). Filtra mensajes incoming, los clasifica con Haiku 4.5 y
+ * aplica la transición correspondiente en `confirmations.appointments`.
  *
- * Diseño: pull desacoplado del POST del webhook — el receiver responde
- * 200 rápido y este procesador trabaja con cursor `processed_at IS NULL`.
- *
- * Idempotente: el UPDATE de processed_at usa el mismo id que se leyó,
- * y los inserts en inbound_classifications no son únicos (un raw_event
- * puede tener múltiples ejecuciones — la última es la fuente de verdad,
- * pero el log queda para auditoría).
+ * `processInboundQueue` queda como shim deprecado que delega al dispatcher,
+ * por compatibilidad de imports.
  */
 
-import { getPool } from "./db.js";
 import { classifyInbound, INTENTS } from "./classifier.js";
 import {
   findAppointmentByInboundPhone,
@@ -27,72 +21,19 @@ import { sendAcknowledgment } from "./acknowledgments.js";
 const HANDOFF_TIMEOUT_MS = 8_000;
 
 /**
- * Procesa hasta `limit` eventos pendientes. Devuelve un resumen.
- *
- * Atomic claim con FOR UPDATE SKIP LOCKED: reserva las filas para
- * este processor saltándose las ya bloqueadas por otra invocación
- * concurrente. Resuelve la race donde 2+ auto-triggers del webhook
- * agarraban el mismo evento y lo clasificaban 2 veces (visible en
- * el test live: respuestas como "SI" generaban 2 acks).
- *
- * Como el UPDATE setea processed_at de una, processOne ya no necesita
- * llamar markProcessed al final — el evento ya está marcado.
+ * @deprecated El claim + ruteo de la cola ahora vive en chatwoot-dispatcher.
+ * Este shim se mantiene por compatibilidad de imports y delega al dispatcher,
+ * que rutea a este módulo vía el handler "melania" (default). Ver
+ * chatwoot-dispatcher/README.md.
  */
-export async function processInboundQueue({ limit = 50 } = {}) {
-  const pool = getPool();
-  const { rows } = await pool.query(
-    `
-    WITH next AS (
-      SELECT id
-        FROM chatwoot.raw_events
-       WHERE processed_at IS NULL
-         AND event_type = 'message_created'
-       ORDER BY received_at ASC
-       LIMIT $1
-         FOR UPDATE SKIP LOCKED
-    )
-    UPDATE chatwoot.raw_events r
-       SET processed_at = now()
-      FROM next
-     WHERE r.id = next.id
-    RETURNING r.id, r.event_type, r.payload
-    `,
-    [limit]
-  );
-
-  const summary = {
-    scanned: rows.length,
-    classified: 0,
-    matched: 0,
-    handoffs: 0,
-    acked: 0,
-    skipped: 0,
-    errors: 0,
-  };
-
-  for (const ev of rows) {
-    try {
-      const result = await processOne(ev);
-      if (result.skipped) summary.skipped++;
-      if (result.classified) summary.classified++;
-      if (result.matchedAppointment) summary.matched++;
-      if (result.handoff) summary.handoffs++;
-      if (result.acked) summary.acked++;
-    } catch (err) {
-      summary.errors++;
-      await markProcessed(ev.id, err.message);
-      console.error(
-        `[confirmations/inbound-processor] event ${ev.id} failed:`,
-        err.message
-      );
-    }
-  }
-  return summary;
+export async function processInboundQueue(opts = {}) {
+  const { dispatchPending } = await import("../chatwoot-dispatcher/index.js");
+  return dispatchPending(opts);
 }
 
-async function processOne(ev) {
+export async function handleInboundEvent(ev) {
   // Nota: el evento YA está marcado como processed por el atomic claim
-  // en processInboundQueue. No volvemos a llamar markProcessed.
+  // del chatwoot-dispatcher. No re-marcamos processed_at acá.
   const message = extractMessage(ev.payload);
   if (!message) {
     return { skipped: true };
@@ -170,19 +111,6 @@ function extractMessage(payload) {
     content,
     conversationId: payload?.conversation?.id ?? null,
   };
-}
-
-async function markProcessed(rawEventId, error) {
-  const pool = getPool();
-  await pool.query(
-    `
-    UPDATE chatwoot.raw_events
-       SET processed_at = now(),
-           error = $2
-     WHERE id = $1
-    `,
-    [rawEventId, error]
-  );
 }
 
 /**
