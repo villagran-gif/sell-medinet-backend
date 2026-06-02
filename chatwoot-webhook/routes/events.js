@@ -6,12 +6,12 @@ import { verifyHmac } from "../lib/signature.js";
 const router = Router();
 
 /**
- * Auto-trigger del processor de confirmations apenas se persiste un
+ * Auto-trigger del chatwoot-dispatcher apenas se persiste un
  * `message_created`. Esto baja la latencia del ack al paciente de
  * "0–2 minutos" (cron) a "2–5 segundos" (inline async).
  *
  * Implementación:
- * - Dynamic import para no acoplar chatwoot-webhook a confirmations
+ * - Dynamic import para no acoplar chatwoot-webhook al dispatcher
  *   en tiempo de carga (chatwoot-webhook puede usarse standalone).
  * - Fire-and-forget: no esperamos el resultado. El webhook responde
  *   200 inmediatamente; el processor corre en background.
@@ -24,13 +24,16 @@ function autoProcessIfMessageCreated(eventType) {
 
   // Fire-and-forget. limit pequeño para procesar lo que entró + algo
   // de catch-up, sin bloquear si hay backlog grande.
-  import("../../confirmations/inbound-processor.js")
-    .then(({ processInboundQueue }) => processInboundQueue({ limit: 10 }))
+  import("../../chatwoot-dispatcher/index.js")
+    .then(({ dispatchPending }) => dispatchPending({ limit: 10 }))
     .then((summary) => {
-      if (summary.classified > 0 || summary.acked > 0) {
+      if (summary.dispatched > 0 || summary.errors > 0) {
+        const byHandler = Object.entries(summary.byHandler || {})
+          .map(([k, n]) => `${k}=${n}`)
+          .join(" ");
         console.log(
-          `[chatwoot-webhook] autoprocess: classified=${summary.classified} ` +
-            `matched=${summary.matched} acked=${summary.acked} skipped=${summary.skipped}`
+          `[chatwoot-webhook] autoprocess: dispatched=${summary.dispatched} ` +
+            `${byHandler} errors=${summary.errors}`
         );
       }
     })

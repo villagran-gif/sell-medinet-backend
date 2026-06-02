@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireBearer } from "../lib/auth.js";
-import { processInboundQueue } from "../inbound-processor.js";
+import { dispatchPending } from "../../chatwoot-dispatcher/index.js";
 
 const router = Router();
 
@@ -23,7 +23,7 @@ router.post("/", requireBearer, async (req, res) => {
     : 50;
 
   try {
-    const summary = await processInboundQueue({ limit });
+    const summary = await dispatchPending({ limit });
     return res.status(200).json({ status: "ok", ...summary });
   } catch (err) {
     console.error("[confirmations/process-inbound] failed:", err.message);

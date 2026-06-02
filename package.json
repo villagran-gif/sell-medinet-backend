@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "test": "node --test chatwoot-dispatcher/*.test.js support-normalizer/*.test.js",
     "migrate:support": "node support-service/migrations/cli.js",
     "backfill:support": "node support-service/scripts/backfill.js"
   },
