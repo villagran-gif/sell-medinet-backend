@@ -22,6 +22,8 @@ const HANDLER_LOADERS = {
     import("../confirmations/inbound-processor.js").then((m) => m.handleInboundEvent),
   "support-normalizer": () =>
     import("../support-normalizer/index.js").then((m) => m.handleInboundEvent),
+  antonia: () =>
+    import("../antonia-bridge/index.js").then((m) => m.handleInboundEvent),
 };
 
 const handlerCache = new Map();

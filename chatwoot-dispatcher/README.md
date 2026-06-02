@@ -27,6 +27,7 @@ cambiar nada en producción hasta que se configure el ruteo.
 |---|---|---|
 | `melania` | `confirmations/inbound-processor.js` → `handleInboundEvent` | confirmaciones de citas (clasificador Haiku + lifecycle) |
 | `support-normalizer` | `support-normalizer/index.js` → `handleInboundEvent` | espeja la conversación a `support.*` (ticket + user + comment) |
+| `antonia` | `antonia-bridge/index.js` → `handleInboundEvent` | reenvía a clinyco_AI `POST /chatwoot/inbound` para que Antonia responda por Chatwoot |
 
 Un handler expone `async handleInboundEvent(ev)` con `ev = { id, event_type, payload }`.
 
