@@ -39,6 +39,18 @@ function autoProcessIfMessageCreated(eventType) {
     });
 }
 
+// Fire-and-forget para transcripción de llamadas de voz.
+// Opt-in con CHATWOOT_TRANSCRIPTION_ENABLED=true. El handler interno
+// filtra por tipo de evento y canal Voice; los demás eventos los ignora.
+function maybeTriggerTranscription(payload) {
+  if (process.env.CHATWOOT_TRANSCRIPTION_ENABLED !== "true") return;
+  import("../transcription/handler.js")
+    .then(({ maybeTranscribe }) => maybeTranscribe(payload))
+    .catch((err) => {
+      console.error("[transcription] dispatcher failed:", err.message);
+    });
+}
+
 // Parser JSON propio del módulo para capturar rawBody (necesario para HMAC).
 // No sustituye al express.json() global de server.js — este solo aplica en /events.
 router.use(
@@ -85,6 +97,10 @@ router.post("/", async (req, res) => {
     // Auto-trigger del processor para mensajes inbound. Background,
     // no esperamos el resultado — el webhook responde ya.
     autoProcessIfMessageCreated(eventType);
+
+    // Auto-trigger de transcripción al cerrarse una conversación de voz.
+    // También fire-and-forget; el handler filtra por sí mismo.
+    maybeTriggerTranscription(payload);
 
     return res.status(200).json({
       ok: true,

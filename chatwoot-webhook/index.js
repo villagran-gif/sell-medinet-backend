@@ -2,12 +2,14 @@ import { Router } from "express";
 import { runMigrations } from "./migrations/runner.js";
 import healthRouter from "./routes/health.js";
 import eventsRouter from "./routes/events.js";
+import transcriptionsRouter from "./routes/transcriptions.js";
 
 export function createChatwootWebhookRouter({ autoMigrate = true } = {}) {
   const router = Router();
 
   router.use("/health", healthRouter);
   router.use("/events", eventsRouter);
+  router.use("/transcriptions", transcriptionsRouter);
 
   if (autoMigrate) {
     runMigrations()
