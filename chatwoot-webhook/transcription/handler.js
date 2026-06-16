@@ -37,12 +37,18 @@ function isClosingEvent(payload) {
 }
 
 function extractConversationId(payload) {
-  return (
-    payload?.conversation?.id ||
-    payload?.id ||
-    payload?.conversation_id ||
-    null
-  );
+  // CRÍTICO: Chatwoot tiene dos IDs por conversación:
+  //   - `id`         → ID interno de la DB (autoincrement global)
+  //   - `display_id` → ID que se ve en la UI y EL QUE USA LA API REST
+  //
+  // Si POSTeamos a /conversations/{id}/messages con el id interno,
+  // Chatwoot lo trata como display_id y termina en otra conversación
+  // (o crea una nueva). Por eso preferimos display_id siempre.
+  //
+  // En `message_*` events la conversación viene anidada en `payload.conversation`.
+  // En `conversation_*` events la conversación ES el payload.
+  const conv = payload?.conversation || payload || {};
+  return conv.display_id || conv.id || null;
 }
 
 function isVoiceChannel(conv) {
