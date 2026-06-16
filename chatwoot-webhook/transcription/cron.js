@@ -8,7 +8,7 @@
 
 import { retryPending } from "./handler.js";
 
-const DEFAULT_INTERVAL_MS = 60_000;
+const DEFAULT_INTERVAL_MS = 10_000;
 const DEFAULT_LIMIT = 10;
 
 let timer = null;
