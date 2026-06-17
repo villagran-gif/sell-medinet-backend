@@ -43,8 +43,10 @@ function autoProcessIfMessageCreated(eventType) {
 }
 
 // Fire-and-forget para transcripción de llamadas de voz.
-// Opt-in con CHATWOOT_TRANSCRIPTION_ENABLED=true. El handler interno
-// filtra por tipo de evento y canal Voice; los demás eventos los ignora.
+// Opt-in con CHATWOOT_TRANSCRIPTION_ENABLED=true. El handler interno:
+//   - Si el payload trae call_sid → enqueue pending (lo procesa el cron en ~10s).
+//   - Si es evento de cierre → fetch a la conversación + intento inmediato.
+//   - Otros eventos: ignora.
 function maybeTriggerTranscription(payload) {
   if (process.env.CHATWOOT_TRANSCRIPTION_ENABLED !== "true") return;
   import("../transcription/handler.js")

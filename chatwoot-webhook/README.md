@@ -118,6 +118,10 @@ transcripción (fire-and-forget desde `routes/events.js`):
 | `CHATWOOT_BASE_URL` | no | `https://app.chatwoot.com` | Base de la API |
 | `CHATWOOT_ACCOUNT_ID` | sí | — | ID numérico de tu cuenta Chatwoot |
 | `CHATWOOT_API_TOKEN` | sí | — | User Access Token (Profile → Access Token) |
+| `CHATWOOT_TRANSCRIPTION_CRON_ENABLED` | no | `false` | Activa self-cron interno que reprocesa pendientes/failed |
+| `CHATWOOT_TRANSCRIPTION_CRON_INTERVAL_MS` | no | `60000` | Intervalo del self-cron en ms |
+| `CHATWOOT_TRANSCRIPTION_CRON_LIMIT` | no | `10` | Cuántos jobs procesa por tick |
+| `CHATWOOT_TRANSCRIPTION_FIRST_WAIT_MS` | no | `0` | Espera artificial antes del primer intento (poné `5000` si tu Twilio tarda en cerrar la grabación) |
 
 ### Endpoints
 

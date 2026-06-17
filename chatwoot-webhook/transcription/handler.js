@@ -18,7 +18,10 @@ import { transcribe } from "../lib/whisper.js";
 import { getConversation, postPrivateNote } from "../lib/chatwoot-api.js";
 
 const MAX_ATTEMPTS = 5;
-const FIRST_ATTEMPT_WAIT_MS = 5000;
+// Espera artificial antes del primer intento, configurable.
+// Default 0 ahora — si la grabación no está lista, marcamos pending
+// y el cron interno (cada 10s) la retoma en cuanto Twilio termina.
+const FIRST_ATTEMPT_WAIT_MS = Number(process.env.CHATWOOT_TRANSCRIPTION_FIRST_WAIT_MS) || 0;
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -34,12 +37,18 @@ function isClosingEvent(payload) {
 }
 
 function extractConversationId(payload) {
-  return (
-    payload?.conversation?.id ||
-    payload?.id ||
-    payload?.conversation_id ||
-    null
-  );
+  // CRÍTICO: Chatwoot tiene dos IDs por conversación:
+  //   - `id`         → ID interno de la DB (autoincrement global)
+  //   - `display_id` → ID que se ve en la UI y EL QUE USA LA API REST
+  //
+  // Si POSTeamos a /conversations/{id}/messages con el id interno,
+  // Chatwoot lo trata como display_id y termina en otra conversación
+  // (o crea una nueva). Por eso preferimos display_id siempre.
+  //
+  // En `message_*` events la conversación viene anidada en `payload.conversation`.
+  // En `conversation_*` events la conversación ES el payload.
+  const conv = payload?.conversation || payload || {};
+  return conv.display_id || conv.id || null;
 }
 
 function isVoiceChannel(conv) {
@@ -67,19 +76,79 @@ function extractCallSid(conv) {
   );
 }
 
-// Entry point disparado por routes/events.js
+function extractCallSidFromPayload(payload) {
+  // Chatwoot puede emitir el call_sid en distintos niveles según el evento.
+  // Probamos los shapes más comunes antes de ir a la API.
+  const candidates = [
+    payload?.additional_attributes,
+    payload?.conversation?.additional_attributes,
+    payload?.meta?.additional_attributes,
+    payload?.conversation?.meta?.additional_attributes,
+  ].filter(Boolean);
+  for (const aa of candidates) {
+    const sid =
+      aa.call_sid || aa.callSid || aa.CallSid || aa.twilio_call_sid || aa.sid;
+    if (sid) return String(sid);
+  }
+  return null;
+}
+
+// Entry point disparado por routes/events.js para CUALQUIER evento.
+// Estrategia para minimizar latencia:
+//   - Si el payload ya trae call_sid → enqueue pending al toque (sin fetch),
+//     el cron lo procesará en ~10s.
+//   - Si es un evento de cierre → fetch a la conversación + intento inmediato.
+//   - Cualquier otro evento → ignorar.
 export async function maybeTranscribe(payload) {
   if (process.env.CHATWOOT_TRANSCRIPTION_ENABLED !== "true") return;
-  if (!isClosingEvent(payload)) return;
 
   const conversationId = extractConversationId(payload);
   if (!conversationId) return;
 
-  try {
-    await enqueueAndRun(conversationId);
-  } catch (err) {
-    console.error(`[transcription] failed for conv ${conversationId}:`, err.message);
+  const closing = isClosingEvent(payload);
+  const inlineCallSid = extractCallSidFromPayload(payload);
+
+  // Fast-path: el payload ya tiene call_sid, no necesitamos llamar a Chatwoot.
+  // Esto dispara en `conversation_created`, `conversation_updated`, etc.
+  if (inlineCallSid) {
+    try {
+      await enqueuePending(conversationId, payload?.account?.id || null, inlineCallSid);
+      // Si además es un evento de cierre, intentamos procesar al toque.
+      if (closing) {
+        const pool = getPool();
+        const { rows } = await pool.query(
+          `SELECT id FROM chatwoot.call_transcriptions
+            WHERE conversation_id = $1 AND call_sid = $2`,
+          [conversationId, inlineCallSid]
+        );
+        if (rows[0]) await runJob(rows[0].id);
+      }
+    } catch (err) {
+      console.error(`[transcription] enqueue failed for conv ${conversationId}:`, err.message);
+    }
+    return;
   }
+
+  // Slow-path: evento de cierre sin call_sid en payload — pedimos la
+  // conversación a la API y procesamos.
+  if (closing) {
+    try {
+      await enqueueAndRun(conversationId);
+    } catch (err) {
+      console.error(`[transcription] failed for conv ${conversationId}:`, err.message);
+    }
+  }
+}
+
+async function enqueuePending(conversationId, accountId, callSid) {
+  const pool = getPool();
+  await pool.query(
+    `INSERT INTO chatwoot.call_transcriptions
+       (conversation_id, account_id, call_sid)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (conversation_id, call_sid) DO NOTHING`,
+    [conversationId, accountId, callSid]
+  );
 }
 
 async function enqueueAndRun(conversationId) {
