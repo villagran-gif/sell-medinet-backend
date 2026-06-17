@@ -15,6 +15,7 @@
 import { getPool } from "../db.js";
 import { findRecordingByCallSid, downloadRecordingMp3 } from "../lib/twilio-recording.js";
 import { transcribe } from "../lib/whisper.js";
+import { summarizeAndFormat } from "../lib/summarizer.js";
 import { getConversation, postPrivateNote } from "../lib/chatwoot-api.js";
 
 const MAX_ATTEMPTS = 5;
@@ -76,79 +77,64 @@ function extractCallSid(conv) {
   );
 }
 
-function extractCallSidFromPayload(payload) {
-  // Chatwoot puede emitir el call_sid en distintos niveles según el evento.
-  // Probamos los shapes más comunes antes de ir a la API.
-  const candidates = [
-    payload?.additional_attributes,
-    payload?.conversation?.additional_attributes,
-    payload?.meta?.additional_attributes,
-    payload?.conversation?.meta?.additional_attributes,
-  ].filter(Boolean);
-  for (const aa of candidates) {
-    const sid =
-      aa.call_sid || aa.callSid || aa.CallSid || aa.twilio_call_sid || aa.sid;
-    if (sid) return String(sid);
+// Cache en memoria para evitar fetchar la misma conversación N veces si
+// `conversation_updated` se dispara muchas veces seguidas.
+const recentlyDispatched = new Map();
+const DISPATCH_TTL_MS = 60_000;
+
+function alreadyDispatched(conversationId) {
+  const ts = recentlyDispatched.get(conversationId);
+  if (!ts) return false;
+  if (Date.now() - ts > DISPATCH_TTL_MS) {
+    recentlyDispatched.delete(conversationId);
+    return false;
   }
-  return null;
+  return true;
 }
 
-// Entry point disparado por routes/events.js para CUALQUIER evento.
-// Estrategia para minimizar latencia:
-//   - Si el payload ya trae call_sid → enqueue pending al toque (sin fetch),
-//     el cron lo procesará en ~10s.
-//   - Si es un evento de cierre → fetch a la conversación + intento inmediato.
-//   - Cualquier otro evento → ignorar.
+function markDispatched(conversationId) {
+  recentlyDispatched.set(conversationId, Date.now());
+  if (recentlyDispatched.size > 1000) {
+    const now = Date.now();
+    for (const [k, v] of recentlyDispatched) {
+      if (now - v > DISPATCH_TTL_MS) recentlyDispatched.delete(k);
+    }
+  }
+}
+
+function isInterestingEvent(payload) {
+  // Cualquier evento de conversación dispara el flujo. Filtramos en el handler
+  // si la conversación no es Voice o no tiene call_sid. message_* eventos se
+  // ignoran porque generan demasiado ruido.
+  const ev = payload?.event;
+  return (
+    ev === "conversation_created" ||
+    ev === "conversation_updated" ||
+    ev === "conversation_status_changed" ||
+    ev === "conversation_resolved"
+  );
+}
+
+// Entry point disparado por routes/events.js
+// Estrategia: para cualquier evento de conversación, intentamos enqueue+run
+// (la operación es idempotente y barata si la conversación no es voice).
 export async function maybeTranscribe(payload) {
   if (process.env.CHATWOOT_TRANSCRIPTION_ENABLED !== "true") return;
+  if (!isInterestingEvent(payload)) return;
 
   const conversationId = extractConversationId(payload);
   if (!conversationId) return;
 
-  const closing = isClosingEvent(payload);
-  const inlineCallSid = extractCallSidFromPayload(payload);
+  // Dedup: si ya disparamos en los últimos 60s para esta conversación,
+  // dejamos que el cron interno la siga retomando.
+  if (alreadyDispatched(conversationId)) return;
+  markDispatched(conversationId);
 
-  // Fast-path: el payload ya tiene call_sid, no necesitamos llamar a Chatwoot.
-  // Esto dispara en `conversation_created`, `conversation_updated`, etc.
-  if (inlineCallSid) {
-    try {
-      await enqueuePending(conversationId, payload?.account?.id || null, inlineCallSid);
-      // Si además es un evento de cierre, intentamos procesar al toque.
-      if (closing) {
-        const pool = getPool();
-        const { rows } = await pool.query(
-          `SELECT id FROM chatwoot.call_transcriptions
-            WHERE conversation_id = $1 AND call_sid = $2`,
-          [conversationId, inlineCallSid]
-        );
-        if (rows[0]) await runJob(rows[0].id);
-      }
-    } catch (err) {
-      console.error(`[transcription] enqueue failed for conv ${conversationId}:`, err.message);
-    }
-    return;
+  try {
+    await enqueueAndRun(conversationId);
+  } catch (err) {
+    console.error(`[transcription] failed for conv ${conversationId}:`, err.message);
   }
-
-  // Slow-path: evento de cierre sin call_sid en payload — pedimos la
-  // conversación a la API y procesamos.
-  if (closing) {
-    try {
-      await enqueueAndRun(conversationId);
-    } catch (err) {
-      console.error(`[transcription] failed for conv ${conversationId}:`, err.message);
-    }
-  }
-}
-
-async function enqueuePending(conversationId, accountId, callSid) {
-  const pool = getPool();
-  await pool.query(
-    `INSERT INTO chatwoot.call_transcriptions
-       (conversation_id, account_id, call_sid)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (conversation_id, call_sid) DO NOTHING`,
-    [conversationId, accountId, callSid]
-  );
 }
 
 async function enqueueAndRun(conversationId) {
@@ -202,10 +188,26 @@ async function runJob(id) {
     const audio = await downloadRecordingMp3(rec.sid);
     const { text, model } = await transcribe(audio, { language: "es" });
 
+    // Post-procesamiento opcional con LLM: resumen + reformateo en párrafos.
+    // Opt-in con CHATWOOT_TRANSCRIPTION_SUMMARIZE=true. Si falla, seguimos
+    // con el texto crudo de Whisper.
+    let formatted = text;
+    let resumen = null;
+    if (process.env.CHATWOOT_TRANSCRIPTION_SUMMARIZE === "true" && text?.trim()) {
+      try {
+        const r = await summarizeAndFormat(text);
+        formatted = r.transcripcion_formateada || text;
+        resumen = r.resumen;
+      } catch (e) {
+        console.error(`[transcription] summarize failed (job ${id}):`, e.message);
+      }
+    }
+
     const dur = Number(rec.duration) || 0;
-    const note =
-      `🤖 *Transcripción de la llamada* (${dur}s)\n\n` +
-      (text?.trim() || "_(audio sin contenido detectable)_");
+    let note = `🤖 *Transcripción de la llamada* (${dur}s)\n\n`;
+    if (resumen) note += `📌 *Resumen*\n${resumen}\n\n`;
+    note += `📝 *Transcripción*\n` +
+      (formatted?.trim() || "_(audio sin contenido detectable)_");
     await postPrivateNote(conversation_id, note);
 
     await pool.query(
@@ -271,4 +273,54 @@ export async function transcribeNow({ conversation_id, call_sid }) {
   if (rows[0].status === "done") return { id: rows[0].id, status: "done", note: "already done" };
   await runJob(rows[0].id);
   return { id: rows[0].id };
+}
+
+// Backfill: procesa las conversaciones de voz de las últimas N horas
+// que no estén ya transcritas. Útil para llamadas que ocurrieron antes
+// de que estuviera el trigger automático andando.
+export async function backfillFromEvents({ sinceHours = 24, limit = 50 } = {}) {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT DISTINCT (payload->>'id')::bigint AS conv_id
+       FROM chatwoot.raw_events
+      WHERE event_type IN (
+            'conversation_created',
+            'conversation_updated',
+            'conversation_status_changed',
+            'conversation_resolved'
+        )
+        AND received_at > now() - ($1 || ' hours')::interval
+        AND payload->>'id' ~ '^[0-9]+$'
+      ORDER BY conv_id DESC
+      LIMIT $2`,
+    [String(sinceHours), limit]
+  );
+
+  let processed = 0;
+  let queued = 0;
+  let skipped = 0;
+  let errors = 0;
+  for (const row of rows) {
+    const conversationId = Number(row.conv_id);
+    if (!conversationId) continue;
+    processed++;
+    try {
+      // Skip si ya está done para esta conversación
+      const existing = await pool.query(
+        `SELECT 1 FROM chatwoot.call_transcriptions
+          WHERE conversation_id = $1 AND status = 'done' LIMIT 1`,
+        [conversationId]
+      );
+      if (existing.rowCount > 0) {
+        skipped++;
+        continue;
+      }
+      await enqueueAndRun(conversationId);
+      queued++;
+    } catch (err) {
+      errors++;
+      console.error(`[backfill] conv ${conversationId} failed:`, err.message);
+    }
+  }
+  return { processed, queued, skipped, errors };
 }

@@ -3,6 +3,7 @@ import { runMigrations } from "./migrations/runner.js";
 import healthRouter from "./routes/health.js";
 import eventsRouter from "./routes/events.js";
 import transcriptionsRouter from "./routes/transcriptions.js";
+import missedCallsRouter from "./routes/missed-calls.js";
 import { startTranscriptionCron } from "./transcription/cron.js";
 
 export function createChatwootWebhookRouter({ autoMigrate = true } = {}) {
@@ -11,6 +12,7 @@ export function createChatwootWebhookRouter({ autoMigrate = true } = {}) {
   router.use("/health", healthRouter);
   router.use("/events", eventsRouter);
   router.use("/transcriptions", transcriptionsRouter);
+  router.use("/missed-calls", missedCallsRouter);
 
   if (autoMigrate) {
     runMigrations()

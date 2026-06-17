@@ -55,3 +55,50 @@ export async function postPrivateNote(conversationId, content) {
     }),
   });
 }
+
+// --- Helpers para missed-call follow-up via WhatsApp ---
+
+export async function searchContactByPhone(phone) {
+  const q = encodeURIComponent(phone);
+  return api(`/contacts/search?q=${q}&include_contact_inboxes=false`);
+}
+
+export async function createContact({ name, phone_number, inbox_id, identifier }) {
+  return api(`/contacts`, {
+    method: "POST",
+    body: JSON.stringify({
+      inbox_id,
+      name: name || phone_number,
+      phone_number,
+      identifier: identifier || phone_number,
+    }),
+  });
+}
+
+export async function createConversation({ source_id, inbox_id, contact_id, message }) {
+  return api(`/conversations`, {
+    method: "POST",
+    body: JSON.stringify({ source_id, inbox_id, contact_id, message }),
+  });
+}
+
+export async function toggleConversationStatus(conversationId, status = "resolved") {
+  return api(`/conversations/${conversationId}/toggle_status`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function addConversationLabels(conversationId, labels) {
+  return api(`/conversations/${conversationId}/labels`, {
+    method: "POST",
+    body: JSON.stringify({ labels }),
+  });
+}
+
+export async function updateContactAttributes(contactId, custom_attributes) {
+  return api(`/contacts/${contactId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ custom_attributes }),
+  });
+}
