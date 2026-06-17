@@ -56,6 +56,19 @@ function maybeTriggerTranscription(payload) {
     });
 }
 
+// Fire-and-forget para follow-up automático de llamadas perdidas via WhatsApp.
+// Opt-in con CHATWOOT_MISSED_CALL_ENABLED=true. El handler filtra por sí mismo
+// (canal voice + status missed) y envía un template WhatsApp al cliente,
+// auto-resuelve la conversación para no contaminar el inbox de los agentes.
+function maybeTriggerMissedCallFollowup(payload) {
+  if (process.env.CHATWOOT_MISSED_CALL_ENABLED !== "true") return;
+  import("../missed-call/handler.js")
+    .then(({ maybeFollowupMissedCall }) => maybeFollowupMissedCall(payload))
+    .catch((err) => {
+      console.error("[missed-call] dispatcher failed:", err.message);
+    });
+}
+
 // Parser JSON propio del módulo para capturar rawBody (necesario para HMAC).
 // No sustituye al express.json() global de server.js — este solo aplica en /events.
 router.use(
@@ -106,6 +119,10 @@ router.post("/", async (req, res) => {
     // Auto-trigger de transcripción al cerrarse una conversación de voz.
     // También fire-and-forget; el handler filtra por sí mismo.
     maybeTriggerTranscription(payload);
+
+    // Auto-trigger de follow-up WhatsApp para llamadas perdidas.
+    // Fire-and-forget; el handler filtra missed call + canal voice.
+    maybeTriggerMissedCallFollowup(payload);
 
     return res.status(200).json({
       ok: true,
