@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { getPool } from "../db.js";
-import { retryPending, transcribeNow } from "../transcription/handler.js";
+import { retryPending, transcribeNow, backfillFromEvents } from "../transcription/handler.js";
 
 const router = Router();
 
@@ -27,6 +27,21 @@ router.post("/run", async (req, res) => {
       call_sid: String(call_sid),
     });
     res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Backfill: procesa conversaciones de voz de las últimas N horas que no
+// estén ya transcritas. Útil para recuperar llamadas anteriores al deploy
+// del trigger automático.
+// POST /chatwoot-webhook/transcriptions/backfill?since_hours=48&limit=100
+router.post("/backfill", async (req, res) => {
+  try {
+    const sinceHours = Math.min(Math.max(Number(req.query.since_hours) || 24, 1), 168);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 300);
+    const result = await backfillFromEvents({ sinceHours, limit });
+    res.json({ ok: true, since_hours: sinceHours, ...result });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }

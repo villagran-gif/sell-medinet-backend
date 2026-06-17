@@ -15,6 +15,7 @@
 import { getPool } from "../db.js";
 import { findRecordingByCallSid, downloadRecordingMp3 } from "../lib/twilio-recording.js";
 import { transcribe } from "../lib/whisper.js";
+import { summarizeAndFormat } from "../lib/summarizer.js";
 import { getConversation, postPrivateNote } from "../lib/chatwoot-api.js";
 
 const MAX_ATTEMPTS = 5;
@@ -187,10 +188,26 @@ async function runJob(id) {
     const audio = await downloadRecordingMp3(rec.sid);
     const { text, model } = await transcribe(audio, { language: "es" });
 
+    // Post-procesamiento opcional con LLM: resumen + reformateo en párrafos.
+    // Opt-in con CHATWOOT_TRANSCRIPTION_SUMMARIZE=true. Si falla, seguimos
+    // con el texto crudo de Whisper.
+    let formatted = text;
+    let resumen = null;
+    if (process.env.CHATWOOT_TRANSCRIPTION_SUMMARIZE === "true" && text?.trim()) {
+      try {
+        const r = await summarizeAndFormat(text);
+        formatted = r.transcripcion_formateada || text;
+        resumen = r.resumen;
+      } catch (e) {
+        console.error(`[transcription] summarize failed (job ${id}):`, e.message);
+      }
+    }
+
     const dur = Number(rec.duration) || 0;
-    const note =
-      `🤖 *Transcripción de la llamada* (${dur}s)\n\n` +
-      (text?.trim() || "_(audio sin contenido detectable)_");
+    let note = `🤖 *Transcripción de la llamada* (${dur}s)\n\n`;
+    if (resumen) note += `📌 *Resumen*\n${resumen}\n\n`;
+    note += `📝 *Transcripción*\n` +
+      (formatted?.trim() || "_(audio sin contenido detectable)_");
     await postPrivateNote(conversation_id, note);
 
     await pool.query(
@@ -256,4 +273,54 @@ export async function transcribeNow({ conversation_id, call_sid }) {
   if (rows[0].status === "done") return { id: rows[0].id, status: "done", note: "already done" };
   await runJob(rows[0].id);
   return { id: rows[0].id };
+}
+
+// Backfill: procesa las conversaciones de voz de las últimas N horas
+// que no estén ya transcritas. Útil para llamadas que ocurrieron antes
+// de que estuviera el trigger automático andando.
+export async function backfillFromEvents({ sinceHours = 24, limit = 50 } = {}) {
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `SELECT DISTINCT (payload->>'id')::bigint AS conv_id
+       FROM chatwoot.raw_events
+      WHERE event_type IN (
+            'conversation_created',
+            'conversation_updated',
+            'conversation_status_changed',
+            'conversation_resolved'
+        )
+        AND received_at > now() - ($1 || ' hours')::interval
+        AND payload->>'id' ~ '^[0-9]+$'
+      ORDER BY conv_id DESC
+      LIMIT $2`,
+    [String(sinceHours), limit]
+  );
+
+  let processed = 0;
+  let queued = 0;
+  let skipped = 0;
+  let errors = 0;
+  for (const row of rows) {
+    const conversationId = Number(row.conv_id);
+    if (!conversationId) continue;
+    processed++;
+    try {
+      // Skip si ya está done para esta conversación
+      const existing = await pool.query(
+        `SELECT 1 FROM chatwoot.call_transcriptions
+          WHERE conversation_id = $1 AND status = 'done' LIMIT 1`,
+        [conversationId]
+      );
+      if (existing.rowCount > 0) {
+        skipped++;
+        continue;
+      }
+      await enqueueAndRun(conversationId);
+      queued++;
+    } catch (err) {
+      errors++;
+      console.error(`[backfill] conv ${conversationId} failed:`, err.message);
+    }
+  }
+  return { processed, queued, skipped, errors };
 }
