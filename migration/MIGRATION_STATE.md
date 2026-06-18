@@ -128,6 +128,7 @@ User confirmó: "Organizations → Pipelines" funcionó. "Clientes potenciales �
 - **Buscador global**: FCRM Cmd+K reportado como no funciona; revisar.
 - **Tickets en Support panel**: Form Script `show_tickets_deal` puede no estar matcheando los selectores CSS correctos. Validar.
 - **Phone update en CRM Task**: ejecutado en background; verificar que `deal_phone` está populado.
+- **Google SSO** (login adicional al user/pass): ✅ **Operativo desde 2026-05-04** para `villagran@clinyco.cl` (Workspace Internal, OAuth Client `clinyco-crm`). Detalles + lecciones en `migration/auth-google-sso.md`. Política decidida: ambos métodos conviven (no se forzó "Google único"). Pendiente: migrar los 21 Website Users restantes a `System User` y validar que sus emails coinciden con sus Google Workspace accounts antes del rollout masivo.
 
 ## 14. Limitaciones conocidas
 
@@ -177,6 +178,8 @@ User confirmó: "Organizations → Pipelines" funcionó. "Clientes potenciales �
 | `link-tickets-to-deals.py` | Linkear tickets a deals via single-deal contacts |
 | `quick-filters-search.py` | Property Setters in_standard_filter |
 | `hide-column-picker.py` | Form Script hide Columnas button |
+| `auth-google-sso.md` | Doc: setup Google SSO único (Google Cloud Console + Frappe Social Login Key + JIT) |
+| `setup-google-sso.py` | Crea/actualiza el Social Login Key Google idempotente (--execute) |
 
 ## 16. Next session — workflow recomendado
 
