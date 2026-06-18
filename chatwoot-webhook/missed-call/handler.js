@@ -306,3 +306,121 @@ export async function followupNow(conversationId) {
   await processConversation(Number(conversationId));
   return { conversation_id: conversationId };
 }
+
+// Entry point alternativo desde el polling de Twilio:
+// el polling ya filtró por duración (heurística de missed), entonces acá NO
+// volvemos a chequear isMissedCall — confiamos en el caller.
+// Solo necesita el conversation_id de Chatwoot.
+export async function followupFromPolling({ conversationId, callSid, customerPhone, customerName }) {
+  if (process.env.CHATWOOT_MISSED_CALL_ENABLED !== "true") return;
+  if (!conversationId) return;
+
+  const pool = getPool();
+
+  // Skip si ya procesamos (idempotente)
+  const existing = await pool.query(
+    `SELECT status FROM chatwoot.missed_call_followups WHERE conversation_id = $1`,
+    [conversationId]
+  );
+  if (existing.rowCount > 0) {
+    const s = existing.rows[0].status;
+    if (s === "sent" || s === "processing" || s === "skipped") return;
+  }
+
+  // Marcar como processing
+  await pool.query(
+    `INSERT INTO chatwoot.missed_call_followups
+      (conversation_id, call_sid, customer_phone, customer_name, status, attempts)
+     VALUES ($1, $2, $3, $4, 'processing', 1)
+     ON CONFLICT (conversation_id) DO UPDATE
+       SET status = 'processing',
+           attempts = chatwoot.missed_call_followups.attempts + 1,
+           call_sid = COALESCE(EXCLUDED.call_sid, chatwoot.missed_call_followups.call_sid),
+           updated_at = now()`,
+    [conversationId, callSid || null, customerPhone, customerName || null]
+  );
+
+  // Reutilizamos el flujo de envío del template
+  await sendFollowupTemplate({ conversationId, customerPhone, customerName });
+}
+
+async function sendFollowupTemplate({ conversationId, customerPhone, customerName }) {
+  const pool = getPool();
+  const inboxId = Number(process.env.CHATWOOT_WHATSAPP_INBOX_ID);
+  if (!inboxId) {
+    await pool.query(
+      `UPDATE chatwoot.missed_call_followups
+         SET status = 'failed', error = 'missing CHATWOOT_WHATSAPP_INBOX_ID env', updated_at = now()
+       WHERE conversation_id = $1`,
+      [conversationId]
+    );
+    throw new Error("missing CHATWOOT_WHATSAPP_INBOX_ID");
+  }
+
+  const templateName = process.env.CHATWOOT_MISSED_CALL_TEMPLATE || "missed_call_followup";
+  const language = process.env.CHATWOOT_MISSED_CALL_LANGUAGE || "es";
+  const labelName = process.env.CHATWOOT_MISSED_CALL_LABEL || "missed-call-bot";
+
+  try {
+    // 1. Contacto
+    let contactId = null;
+    try {
+      const search = await searchContactByPhone(customerPhone);
+      const list = search?.payload || [];
+      const target = String(customerPhone).replace(/\D/g, "");
+      const match = list.find((c) => String(c?.phone_number || "").replace(/\D/g, "") === target);
+      contactId = match?.id || null;
+    } catch {}
+    if (!contactId) {
+      const created = await createContact({
+        name: customerName || customerPhone,
+        phone_number: customerPhone,
+        inbox_id: inboxId,
+      });
+      contactId = created?.payload?.contact?.id || created?.id || null;
+      if (!contactId) throw new Error("failed to create contact");
+    }
+
+    // 2. Conversación + template
+    const fname = firstName(customerName);
+    const conv2 = await createConversation({
+      source_id: customerPhone,
+      inbox_id: inboxId,
+      contact_id: contactId,
+      message: {
+        content:
+          `📞 Hola ${fname || ""}, recibimos tu llamada a Clinyco y no alcanzamos a contestar.\n\n¿Podemos ayudarte por acá?`.trim(),
+        template_params: {
+          name: templateName,
+          category: "UTILITY",
+          language,
+          processed_params: { "1": fname || "" },
+        },
+      },
+    });
+    const followupConvId = conv2?.id;
+    if (!followupConvId) throw new Error("failed to create followup conversation");
+
+    try { await addConversationLabels(followupConvId, [labelName]); } catch {}
+    try { await toggleConversationStatus(followupConvId, "resolved"); } catch {}
+    try { await updateContactAttributes(contactId, { last_missed_call_at: new Date().toISOString() }); } catch {}
+
+    await pool.query(
+      `UPDATE chatwoot.missed_call_followups
+         SET status = 'sent', contact_id = $2, followup_conversation_id = $3,
+             template_name = $4, error = NULL, updated_at = now()
+       WHERE conversation_id = $1`,
+      [conversationId, contactId, followupConvId, templateName]
+    );
+
+    console.log(`[missed-call] sent '${templateName}' to ${customerPhone} (voice=${conversationId} → wa=${followupConvId})`);
+  } catch (err) {
+    await pool.query(
+      `UPDATE chatwoot.missed_call_followups
+         SET status = 'failed', error = $2, updated_at = now()
+       WHERE conversation_id = $1`,
+      [conversationId, String(err.message || err).slice(0, 500)]
+    );
+    throw err;
+  }
+}
