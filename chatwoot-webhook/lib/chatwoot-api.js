@@ -102,3 +102,13 @@ export async function updateContactAttributes(contactId, custom_attributes) {
     body: JSON.stringify({ custom_attributes }),
   });
 }
+
+// --- Helpers para descubrir inboxes y conversaciones de un contacto ---
+
+export async function listInboxes() {
+  return api(`/inboxes`);
+}
+
+export async function getContactConversations(contactId) {
+  return api(`/contacts/${contactId}/conversations`);
+}

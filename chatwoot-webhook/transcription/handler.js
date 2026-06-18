@@ -16,7 +16,13 @@ import { getPool } from "../db.js";
 import { findRecordingByCallSid, downloadRecordingMp3 } from "../lib/twilio-recording.js";
 import { transcribe } from "../lib/whisper.js";
 import { summarizeAndFormat } from "../lib/summarizer.js";
-import { getConversation, postPrivateNote } from "../lib/chatwoot-api.js";
+import {
+  getConversation,
+  postPrivateNote,
+  listInboxes,
+  searchContactByPhone,
+  getContactConversations,
+} from "../lib/chatwoot-api.js";
 
 const MAX_ATTEMPTS = 5;
 // Espera artificial antes del primer intento, configurable.
@@ -305,7 +311,6 @@ export async function backfillFromEvents({ sinceHours = 24, limit = 50 } = {}) {
     if (!conversationId) continue;
     processed++;
     try {
-      // Skip si ya está done para esta conversación
       const existing = await pool.query(
         `SELECT 1 FROM chatwoot.call_transcriptions
           WHERE conversation_id = $1 AND status = 'done' LIMIT 1`,
@@ -323,4 +328,91 @@ export async function backfillFromEvents({ sinceHours = 24, limit = 50 } = {}) {
     }
   }
   return { processed, queued, skipped, errors };
+}
+
+// --- Resolver call_sid → conversation_id de Chatwoot ---
+//
+// Como Chatwoot Cloud no dispara webhooks para el canal Voice, no llegan
+// eventos al backend. Esta función toma un call_sid de Twilio + el número
+// del cliente que llamó, encuentra el contacto en Chatwoot por número, y
+// devuelve su conversación más reciente del inbox Voice.
+
+let cachedVoiceInboxId = null;
+let cachedVoiceInboxAt = 0;
+const VOICE_INBOX_CACHE_TTL_MS = 10 * 60 * 1000; // 10 min
+
+export async function findVoiceInboxId() {
+  if (process.env.CHATWOOT_VOICE_INBOX_ID) {
+    return Number(process.env.CHATWOOT_VOICE_INBOX_ID);
+  }
+  // Cache local para no pegarle a /inboxes en cada llamada.
+  if (cachedVoiceInboxId && Date.now() - cachedVoiceInboxAt < VOICE_INBOX_CACHE_TTL_MS) {
+    return cachedVoiceInboxId;
+  }
+  const data = await listInboxes();
+  const inboxes = data?.payload || data?.data || [];
+  const voice = inboxes.find((i) =>
+    String(i.channel_type || "").toLowerCase().includes("voice")
+  );
+  if (voice?.id) {
+    cachedVoiceInboxId = voice.id;
+    cachedVoiceInboxAt = Date.now();
+    return voice.id;
+  }
+  return null;
+}
+
+function normalizePhone(p) {
+  return String(p || "").replace(/\D/g, "");
+}
+
+async function findVoiceConversationByPhone(phone, voiceInboxId) {
+  const search = await searchContactByPhone(phone);
+  const contacts = search?.payload || [];
+  const target = normalizePhone(phone);
+  const match = contacts.find((c) => normalizePhone(c.phone_number) === target);
+  if (!match) return null;
+
+  const convs = await getContactConversations(match.id);
+  const list = convs?.payload || convs?.data?.payload || convs || [];
+
+  const voiceConvs = list.filter((c) => {
+    if (voiceInboxId) return c.inbox_id === voiceInboxId;
+    const ct = (c.meta?.channel || c.inbox?.channel_type || "").toLowerCase();
+    return ct.includes("voice");
+  });
+
+  voiceConvs.sort((a, b) => {
+    const ta = new Date(a.created_at || a.timestamp || 0).getTime();
+    const tb = new Date(b.created_at || b.timestamp || 0).getTime();
+    return tb - ta;
+  });
+  return voiceConvs[0] || null;
+}
+
+// Entry point desde Twilio StatusCallback + polling.
+// Hace todo el matching y dispara la transcripción.
+export async function transcribeByCallSid({ callSid, fromNumber }) {
+  if (!callSid || !fromNumber) {
+    throw new Error("transcribeByCallSid: missing callSid or fromNumber");
+  }
+  const pool = getPool();
+
+  // Si ya está done en la tabla (matching por call_sid), skip.
+  const existing = await pool.query(
+    `SELECT conversation_id, status FROM chatwoot.call_transcriptions
+      WHERE call_sid = $1 LIMIT 1`,
+    [callSid]
+  );
+  if (existing.rowCount > 0 && existing.rows[0].status === "done") {
+    return { skipped: true, reason: "already done", conversation_id: existing.rows[0].conversation_id };
+  }
+
+  const voiceInboxId = await findVoiceInboxId();
+  const conv = await findVoiceConversationByPhone(fromNumber, voiceInboxId);
+  if (!conv) {
+    throw new Error(`no voice conversation found for ${fromNumber}`);
+  }
+  const conversationId = conv.display_id || conv.id;
+  return await transcribeNow({ conversation_id: conversationId, call_sid: callSid });
 }
