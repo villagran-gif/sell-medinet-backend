@@ -235,7 +235,7 @@ async function processConversation(conversationId) {
     // 3. Crear conversación en inbox WhatsApp + enviar template
     const fname = firstName(customerName);
     const conv2 = await createConversation({
-      source_id: customerPhone,
+      source_id: customerPhone.replace(/\D/g, ""),
       inbox_id: inboxId,
       contact_id: contactId,
       message: {
@@ -384,7 +384,7 @@ async function sendFollowupTemplate({ conversationId, customerPhone, customerNam
     // 2. Conversación + template
     const fname = firstName(customerName);
     const conv2 = await createConversation({
-      source_id: customerPhone,
+      source_id: customerPhone.replace(/\D/g, ""),
       inbox_id: inboxId,
       contact_id: contactId,
       message: {
