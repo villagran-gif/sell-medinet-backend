@@ -245,7 +245,7 @@ async function processConversation(conversationId) {
           name: templateName,
           category: "UTILITY",
           language,
-          processed_params: { "1": fname || "" },
+          processed_params: { body: { "1": fname || "" } },
         },
       },
     });
@@ -394,7 +394,7 @@ async function sendFollowupTemplate({ conversationId, customerPhone, customerNam
           name: templateName,
           category: "UTILITY",
           language,
-          processed_params: { "1": fname || "" },
+          processed_params: { body: { "1": fname || "" } },
         },
       },
     });
