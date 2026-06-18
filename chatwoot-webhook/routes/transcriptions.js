@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { getPool } from "../db.js";
-import { retryPending, transcribeNow, backfillFromEvents } from "../transcription/handler.js";
+import { retryPending, transcribeNow, backfillFromEvents, transcribeByCallSid, findVoiceInboxId } from "../transcription/handler.js";
 
 const router = Router();
 
@@ -27,6 +27,35 @@ router.post("/run", async (req, res) => {
       call_sid: String(call_sid),
     });
     res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Debug: disparo de transcripción por call_sid + from (matching automático).
+// Devuelve el error real si falla — útil para diagnosticar polling/callback.
+router.post("/run-by-call", async (req, res) => {
+  const { call_sid, from_number } = req.body || {};
+  if (!call_sid || !from_number) {
+    return res.status(400).json({ ok: false, error: "missing call_sid or from_number" });
+  }
+  try {
+    const result = await transcribeByCallSid({ callSid: call_sid, fromNumber: from_number });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err.message,
+      stack: err.stack?.split("\n").slice(0, 5),
+    });
+  }
+});
+
+// Debug: qué inbox detectó findVoiceInboxId.
+router.get("/voice-inbox", async (_req, res) => {
+  try {
+    const id = await findVoiceInboxId();
+    res.json({ ok: true, voice_inbox_id: id });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
