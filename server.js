@@ -5,6 +5,7 @@ import { createTiktokBridgeRouter } from "./tiktok-bridge/index.js";
 import { createChatwootWebhookRouter } from "./chatwoot-webhook/index.js";
 import { createSellRouter } from "./sell-service/index.js";
 import { createConfirmationsRouter } from "./confirmations/index.js";
+import { createTwilioVoiceRouter } from "./twilio-voice/index.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -87,6 +88,24 @@ if (process.env.CONFIRMATIONS_ENABLED === "true") {
   console.log("[confirmations] mounted at /confirmations");
 } else {
   console.log("[confirmations] disabled (set CONFIRMATIONS_ENABLED=true to enable)");
+}
+
+// ======================
+// twilio-voice (opt-in vía TWILIO_VOICE_ENABLED=true)
+// Bridge de telefonía: Twilio Voice (reemplazo de Zendesk Talk) → Chatwoot.
+// Desvía la llamada a un agente; si no contestan, graba buzón. Cada llamada
+// se registra como conversación en Chatwoot. Ver twilio-voice/README.md.
+// ======================
+if (process.env.TWILIO_VOICE_ENABLED === "true") {
+  app.use(
+    "/twilio-voice",
+    createTwilioVoiceRouter({
+      autoMigrate: process.env.TWILIO_VOICE_AUTO_MIGRATE !== "false",
+    })
+  );
+  console.log("[twilio-voice] mounted at /twilio-voice");
+} else {
+  console.log("[twilio-voice] disabled (set TWILIO_VOICE_ENABLED=true to enable)");
 }
 
 // ======================

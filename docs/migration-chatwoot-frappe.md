@@ -581,3 +581,35 @@ publicitarias).
    `+56 9 2645 9376` después.
 3. Soporte Chatwoot Cloud (incluido en plan Startups) — abrir ticket con el
    stack trace.
+
+---
+
+## 16. Telefonía de voz: Zendesk Talk → Twilio + Chatwoot (2026-05-20)
+
+El plan original (WhatsApp / Support / Sell) **no cubría Zendesk Talk** (voz).
+El invoice `INV13629711` ("Talk Usage Subscription", UOM *Voice*, USD 97.30/mo,
+cuenta `ZD00157870`) es esa línea de voz. Workstream nuevo e independiente.
+
+### Decisión (2026-05-20)
+
+| Tema | Elección |
+|---|---|
+| Proveedor de voz | **Twilio Voice** (Chatwoot no atiende PSTN nativo) |
+| Número | **Número nuevo Twilio** (la portación del de Zendesk queda para después) |
+| Comportamiento | **Desvío a agente + fallback a buzón**, todo registrado en Chatwoot |
+
+### Implementación
+
+Módulo `twilio-voice/` en este repo (mismo patrón que `chatwoot-webhook` /
+`tiktok-bridge`): opt-in con `TWILIO_VOICE_ENABLED=true`, valida
+`X-Twilio-Signature`, persiste eventos crudos en `twilio_voice.*` y registra
+cada llamada en un inbox **API channel** de Chatwoot. Sin dependencias nuevas
+(solo stdlib + express + pg). Detalle de env vars, endpoints y setup de
+Twilio/Chatwoot en `twilio-voice/README.md`.
+
+### Cutover
+
+1. Comprar número Twilio + configurar webhook de voz → `/twilio-voice/incoming`.
+2. Setear env vars en Render y activar el flag.
+3. Validar llamada → desvío → buzón → Chatwoot.
+4. Difundir/portar el número y **cancelar la subscription Zendesk Talk**.
