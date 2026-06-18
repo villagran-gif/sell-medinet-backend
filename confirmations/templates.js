@@ -20,40 +20,35 @@
  * Ver docs/whatsapp-templates.md para los textos canónicos.
  */
 
+import { branchMapLink } from "./branch-info.js";
+
 export const TEMPLATES = Object.freeze({
   /**
    * Primer mensaje al paciente, apenas se detecta la cita en Medinet.
-   *
-   * Texto canónico (ver docs/whatsapp-templates.md):
-   *   "Hola {{1}}, soy MelanIA de Clínyco 👋. Te confirmamos tu cita
-   *    de {{2}} con {{3}} el {{4}} a las {{5}}. ¿CONFIRMAS? Responde
-   *    SÍ para confirmar, NO para cancelar, o REAGENDAR si quieres
-   *    cambiarla."
+   * Vars: {{1}} nombre, {{2}} especialidad, {{3}} profesional,
+   *       {{4}} fecha, {{5}} hora.
    */
   CONFIRM_APPOINTMENT:
     process.env.CHATWOOT_HSM_CONFIRM_INITIAL || "cly_confirm_appointment_v1",
 
   /**
-   * Recordatorio enviado a T-76h antes de la cita (~3 días y 4 horas).
+   * Recordatorio único (mismo template para T-72h, T-24h y T-4h). El
+   * timeframe ("en 3 días" / "mañana" / "hoy") va como variable, así un
+   * solo template aprobado en Meta cubre las 3 ventanas.
    *
-   * Texto canónico (ver docs/whatsapp-templates.md):
-   *   "Hola {{1}}, te recordamos tu cita de {{2}} con {{3}} el {{4}} a
-   *    las {{5}}. Si necesitas reagendar o cancelar, respóndenos por
-   *    aquí. ¡Te esperamos!"
-   *
-   * Es INFORMATIVO: no re-pide confirmación. Regla de lifecycle:
-   * sin respuesta al recordatorio = la cita sigue confirmada (no es
-   * un fallo). Solo abre la puerta a cancel/reschedule.
+   * Texto canónico (ver docs/whatsapp-templates.md), 7 variables:
+   *   "Hola {{1}}, te recordamos tu cita de {{2}} con {{3}}, {{4}}.
+   *    📅 {{5}}
+   *    📍 {{6}}
+   *    🗺️ Cómo llegar: {{7}}
+   *    Si necesitas reagendar o cancelar, respóndenos por aquí. ¡Te esperamos!"
    */
-  REMIND_76H:
-    process.env.CHATWOOT_HSM_CONFIRM_REMINDER || "cly_confirm_reminder_76h_v1",
+  REMINDER:
+    process.env.CHATWOOT_HSM_REMINDER || "cly_recordatorio_v1",
 });
 
 /**
- * Construye los `processed_params` que espera Chatwoot para inyectar
- * en {{1}}…{{5}} del template de confirmación.
- *
- * @param appointment row de confirmations.appointments
+ * Construye los `processed_params` del template de confirmación (5 vars).
  */
 export function buildConfirmParams(appointment) {
   return {
@@ -70,28 +65,37 @@ export function buildConfirmParams(appointment) {
 }
 
 /**
- * Idem para el template de recordatorio T-76h.
+ * Construye los `processed_params` del template de recordatorio (7 vars).
+ * El `timeframe` lo pasa el scheduler según la ventana (72h/24h/4h).
+ *
+ * Dirección viene de branch_address (Medinet). Map link de branch-info.
+ * Para telemedicina (sin dirección/mapa) se usan fallbacks.
  */
-export function buildReminderParams(appointment) {
+export function buildReminderParams(appointment, timeframe) {
+  const address =
+    appointment.branch_address ||
+    (isTelemedicina(appointment) ? "Atención por Telemedicina" : (appointment.branch_name || "Clínyco"));
+  const map = branchMapLink(appointment.branch_id) || "https://clinyco.cl";
+
   return {
     processed_params: {
       body: {
         1: shortFirstName(appointment.patient_name),
         2: appointment.specialty || "su atención",
         3: appointment.professional || "su profesional",
-        4: formatDate(appointment.appointment_at),
-        5: formatTime(appointment.appointment_at),
+        4: timeframe || "próximamente",
+        5: `${formatDate(appointment.appointment_at)} a las ${formatTime(appointment.appointment_at)}`,
+        6: address,
+        7: map,
       },
     },
   };
 }
 
 /**
- * Texto de fallback que va en `content` cuando Chatwoot no puede
- * resolver el template (visibles solo en el panel de agentes — el
- * paciente recibe la plantilla aprobada).
+ * Texto de fallback (panel de agentes — el paciente recibe el HSM).
  */
-export function buildFallbackText(appointment, kind) {
+export function buildFallbackText(appointment, kind, timeframe) {
   const name = shortFirstName(appointment.patient_name);
   const when = `${formatDate(appointment.appointment_at)} ${formatTime(
     appointment.appointment_at
@@ -99,11 +103,15 @@ export function buildFallbackText(appointment, kind) {
   if (kind === "remind") {
     return `Recordatorio MelanIA: ${name}, te recordamos tu cita de ${
       appointment.specialty || "atención"
-    } el ${when}.`;
+    } (${timeframe || ""}) el ${when}.`;
   }
   return `Confirmación MelanIA: ${name}, te confirmamos tu cita de ${
     appointment.specialty || "atención"
   } el ${when}. Responde SÍ, NO o REAGENDAR.`;
+}
+
+function isTelemedicina(appointment) {
+  return [2, 3].includes(Number(appointment.branch_id));
 }
 
 function shortFirstName(fullName) {

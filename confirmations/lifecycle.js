@@ -230,18 +230,31 @@ export async function markFirstMessageSent({
   return rows[0] || null;
 }
 
+// Columnas válidas de recordatorio (whitelist — se interpola en SQL).
+const REMINDER_COLUMNS = new Set([
+  "reminder_72h_sent_at",
+  "reminder_24h_sent_at",
+  "reminder_4h_sent_at",
+]);
+
 /**
- * Marca reminder_sent_at + transiciona a 'reminder_sent' si la cita
- * estaba en first_msg_sent. Si ya estaba confirmed, deja el estado
- * pero sí marca el timestamp para no reenviar.
+ * Marca una columna de recordatorio específica (72h/24h/4h) con now(),
+ * idempotente vía COALESCE. No cambia el state (los recordatorios son
+ * informativos; el state lo manejan las respuestas del paciente).
+ *
+ * @param appointmentId
+ * @param column  una de reminder_72h_sent_at | reminder_24h_sent_at | reminder_4h_sent_at
  */
-export async function markReminderSent({ appointmentId }) {
+export async function markReminderKindSent({ appointmentId, column }) {
+  if (!REMINDER_COLUMNS.has(column)) {
+    throw new Error(`markReminderKindSent: columna inválida ${column}`);
+  }
   const pool = getPool();
+  // column viene del whitelist de arriba — seguro interpolarlo.
   const { rows } = await pool.query(
     `
     UPDATE confirmations.appointments
-       SET state = CASE WHEN state = 'first_msg_sent' THEN 'reminder_sent' ELSE state END,
-           reminder_sent_at = COALESCE(reminder_sent_at, now()),
+       SET ${column} = COALESCE(${column}, now()),
            updated_at = now()
      WHERE id = $1
      RETURNING *
