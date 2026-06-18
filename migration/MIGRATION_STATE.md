@@ -177,6 +177,7 @@ User confirmó: "Organizations → Pipelines" funcionó. "Clientes potenciales �
 | `link-tickets-to-deals.py` | Linkear tickets a deals via single-deal contacts |
 | `quick-filters-search.py` | Property Setters in_standard_filter |
 | `hide-column-picker.py` | Form Script hide Columnas button |
+| `set-user-defaults.py` | Setea defaults UI para todos los users habilitados (`desk_theme=Dark` + `default_app=crm`) + Property Setters equivalentes para users nuevos (idempotente, --execute) |
 
 ## 16. Next session — workflow recomendado
 
