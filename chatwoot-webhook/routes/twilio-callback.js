@@ -47,27 +47,67 @@ router.post("/call-status", (req, res) => {
 });
 
 // POST /chatwoot-webhook/twilio/voice-incoming
-// Configurar como Voice URL del número Twilio (reemplaza el de Chatwoot).
-// Saluda + avisa WhatsApp + cuelga. Sin música. El StatusCallback queda
-// en Chatwoot — Chatwoot Voice inbox sigue registrando la llamada.
+// Reemplaza el Voice URL de Chatwoot con un híbrido por horario:
+//  - En horario laboral (L-V 9-18 Chile) → redirige a Chatwoot para que
+//    agentes puedan contestar normalmente
+//  - Fuera de horario → mensaje custom + cuelga, sin música
+// El polling sigue detectando la missed call vía Twilio API en ambos casos.
 router.post("/voice-incoming", (req, res) => {
   const callSid = req.body?.CallSid;
   const from = req.body?.From;
-  console.log(`[twilio-voice] incoming ${callSid} from ${from}`);
+  const inHours = isBusinessHours();
+  console.log(
+    `[twilio-voice] incoming ${callSid} from ${from} businessHours=${inHours}`
+  );
+  res.type("text/xml").send(inHours ? buildRedirectTwiml() : buildHangupTwiml());
+});
 
+function buildRedirectTwiml() {
+  const url =
+    process.env.CHATWOOT_VOICE_URL ||
+    "https://app.chatwoot.com/twilio/voice/call/56229148460";
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Redirect method="POST">${escapeXml(url)}</Redirect>
+</Response>`;
+}
+
+function buildHangupTwiml() {
   const message =
     process.env.TWILIO_VOICE_GREETING ||
-    "Hola, gracias por llamar a Clínyco Centro Médico. En este momento no podemos atenderte por teléfono. Te enviaremos un mensaje por WhatsApp en unos minutos para coordinar tu atención. Hasta pronto.";
+    "Hola, gracias por llamar a Clínyco Centro Médico. Estamos disponibles de lunes a viernes de 9 a 18 horas. Te enviaremos un mensaje por WhatsApp en unos minutos para coordinar tu atención. Hasta pronto.";
   const voice = process.env.TWILIO_VOICE_NAME || "Polly.Mia-Neural";
   const lang = process.env.TWILIO_VOICE_LANG || "es-MX";
-
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="${voice}" language="${lang}">${escapeXml(message)}</Say>
   <Hangup/>
 </Response>`;
-  res.type("text/xml").send(twiml);
-});
+}
+
+// Determina si la hora actual cae dentro del horario de atención
+// configurado. Usa Intl en la zona horaria Chile para sortear DST.
+function isBusinessHours() {
+  const tz = process.env.TWILIO_VOICE_TZ || "America/Santiago";
+  const hourStart = Number(process.env.TWILIO_VOICE_HOUR_START || 9);
+  const hourEnd = Number(process.env.TWILIO_VOICE_HOUR_END || 18);
+  const daysSpec = process.env.TWILIO_VOICE_BUSINESS_DAYS || "1,2,3,4,5";
+  const businessDays = daysSpec.split(",").map((d) => Number(d.trim()));
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    weekday: "short",
+    hour: "numeric",
+    hour12: false,
+  }).formatToParts(new Date());
+  const weekday = parts.find((p) => p.type === "weekday")?.value;
+  const hour = Number(parts.find((p) => p.type === "hour")?.value);
+
+  const wmap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  if (!businessDays.includes(wmap[weekday])) return false;
+  if (hour < hourStart || hour >= hourEnd) return false;
+  return true;
+}
 
 function escapeXml(s) {
   return String(s)
