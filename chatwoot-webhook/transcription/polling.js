@@ -131,15 +131,19 @@ async function tickMissedCalls(window) {
 
     try {
       const conv = await findVoiceConv(from);
+      const conversationId = conv?.display_id || conv?.id || syntheticConvId(callSid);
+      const customerName = conv?.meta?.sender?.name || "";
       if (!conv) {
+        console.log(
+          `[polling-missed] no voice conv for ${from} — synthetic conv_id=${conversationId}`
+        );
         nomatch++;
-        continue;
       }
       await followupFromPolling({
-        conversationId: conv.display_id || conv.id,
+        conversationId,
         callSid,
         customerPhone: from,
-        customerName: conv?.meta?.sender?.name || "",
+        customerName,
       });
       processed++;
     } catch (err) {
@@ -153,6 +157,17 @@ async function tickMissedCalls(window) {
       `[polling-missed] processed=${processed} skipped=${skipped} nomatch=${nomatch} errors=${errors}`
     );
   }
+}
+
+// ID sintético cuando no hay voice conv en Chatwoot. Negativo para no
+// chocar con IDs reales (siempre positivos). Determinístico por call_sid
+// → idempotencia: el mismo call_sid genera el mismo conv_id sintético.
+function syntheticConvId(callSid) {
+  let h = 0;
+  for (let i = 0; i < callSid.length; i++) {
+    h = ((h * 31) + callSid.charCodeAt(i)) | 0;
+  }
+  return -Math.abs(h) - 1;
 }
 
 async function tick() {
