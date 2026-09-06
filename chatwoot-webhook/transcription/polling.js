@@ -18,6 +18,7 @@ const DEFAULT_INTERVAL_MS = 120_000;
 const DEFAULT_WINDOW_MIN = 20;
 
 let timer = null;
+let tickInFlight = false;
 
 function basicAuth() {
   const sid = process.env.TWILIO_ACCOUNT_SID;
@@ -156,9 +157,8 @@ async function tickMissedCalls(window) {
       }
 
       // La idempotencia durable de missed_call_followups está definida por
-      // conversation_id. Comprobarla aquí evita contar como "processed" y
-      // volver a golpear Chatwoot para llamadas que ya fueron atendidas por
-      // el safety net en un ciclo anterior.
+      // conversation_id. Comprobarla aquí evita contar como "processed" un
+      // follow-up que ya estaba resuelto y evita trabajo adicional del handler.
       const existingConversation = await pool.query(
         `SELECT status FROM chatwoot.missed_call_followups WHERE conversation_id = $1 LIMIT 1`,
         [conversationId]
@@ -192,13 +192,23 @@ async function tickMissedCalls(window) {
 }
 
 async function tick() {
-  const window = Number(process.env.CHATWOOT_POLLING_WINDOW_MIN) || DEFAULT_WINDOW_MIN;
+  if (tickInFlight) {
+    console.warn("[polling] tick skipped: previous tick still running");
+    return;
+  }
 
-  // Procesar transcripciones (grabaciones nuevas)
-  await tickTranscriptions(window);
+  tickInFlight = true;
+  try {
+    const window = Number(process.env.CHATWOOT_POLLING_WINDOW_MIN) || DEFAULT_WINDOW_MIN;
 
-  // Procesar missed calls (llamadas con dur baja, sin grabación)
-  await tickMissedCalls(window);
+    // Procesar transcripciones (grabaciones nuevas)
+    await tickTranscriptions(window);
+
+    // Procesar missed calls (llamadas con dur baja, sin grabación)
+    await tickMissedCalls(window);
+  } finally {
+    tickInFlight = false;
+  }
 }
 
 async function tickTranscriptions(window) {
