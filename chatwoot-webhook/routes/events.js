@@ -100,20 +100,24 @@ router.post("/", async (req, res) => {
 
   const payload = req.body || {};
   const eventType = payload.event || null;
-  const accountId =
-    payload.account?.id ?? payload.account_id ?? null;
+  const accountId = payload.account?.id ?? payload.account_id ?? null;
 
   try {
     const pool = getPool();
     const { rows } = await pool.query(
-      `INSERT INTO chatwoot.raw_events (event_type, account_id, payload, sig_verified)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO chatwoot.raw_events
+         (event_type, account_id, payload, sig_verified, processed_at)
+       VALUES (
+         $1, $2, $3, $4,
+         CASE WHEN $1 = 'message_created' THEN NULL ELSE now() END
+       )
        RETURNING id`,
       [eventType, accountId, payload, sigOk]
     );
 
-    // Auto-trigger del processor para mensajes inbound. Background,
-    // no esperamos el resultado — el webhook responde ya.
+    // Sólo message_created pertenece a la cola del dispatcher. El resto de los
+    // webhooks se conserva como log, pero queda marcado procesado desde el ingreso
+    // para que no infle indefinidamente el índice/cola de pendientes.
     autoProcessIfMessageCreated(eventType);
 
     // Auto-trigger de transcripción al cerrarse una conversación de voz.
