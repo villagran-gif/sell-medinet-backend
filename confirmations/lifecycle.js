@@ -133,13 +133,11 @@ export async function upsertAppointment(normalized) {
 }
 
 /**
- * Busca la cita "más relevante" para un teléfono que acaba de mandar
- * un mensaje. Heurística: la cita futura más cercana (o pasada por menos
- * de 24h) que esté en un estado donde tiene sentido recibir respuesta.
+ * Busca una cita que REALMENTE esté esperando respuesta del paciente.
  *
- * Devuelve null si no hay match — entonces el mensaje no se asocia a
- * ninguna cita (clasifica igual y queda registrado en inbound_classifications
- * para auditoría).
+ * Sólo first_msg_sent/reminder_sent califican. Una cita apenas scheduled,
+ * ya confirmed o ya reschedule_requested NO debe capturar mensajes normales
+ * de WhatsApp ni interferir con AntonIA.
  */
 export async function findAppointmentByInboundPhone(phone) {
   if (!phone) return null;
@@ -149,8 +147,7 @@ export async function findAppointmentByInboundPhone(phone) {
     SELECT *
     FROM confirmations.appointments
     WHERE patient_phone = $1
-      AND state IN ('first_msg_sent', 'reminder_sent', 'confirmed',
-                    'reschedule_requested', 'scheduled')
+      AND state IN ('first_msg_sent', 'reminder_sent')
       AND appointment_at > now() - interval '24 hours'
     ORDER BY appointment_at ASC
     LIMIT 1
