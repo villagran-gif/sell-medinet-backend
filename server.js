@@ -1,9 +1,7 @@
 import express from "express";
 import { randomUUID } from "crypto";
-import { createSupportRouter } from "./support-service/index.js";
 import { createTiktokBridgeRouter } from "./tiktok-bridge/index.js";
 import { createChatwootWebhookRouter } from "./chatwoot-webhook/index.js";
-import { createSellRouter } from "./sell-service/index.js";
 import { createConfirmationsRouter } from "./confirmations/index.js";
 
 const app = express();
@@ -14,51 +12,19 @@ const IDENTIFIER_TYPES = { DNI: "DNI", RUN: "RUN" };
 app.use(express.json({ limit: "1mb" }));
 
 // ======================
-// support-service (opt-in vía SUPPORT_ENABLED=true)
-// Reemplazo incremental de Zendesk Support. Mientras esté apagado, el módulo
-// no toca DB ni corre migraciones. Ver support-service/README.md.
-// ======================
-if (process.env.SUPPORT_ENABLED === "true") {
-  app.use(
-    "/support",
-    createSupportRouter({
-      autoMigrate: process.env.SUPPORT_AUTO_MIGRATE !== "false",
-    })
-  );
-  console.log("[support-service] mounted at /support");
-} else {
-  console.log("[support-service] disabled (set SUPPORT_ENABLED=true to enable)");
-}
-
-// ======================
 // tiktok-bridge (opt-in vía TIKTOK_BRIDGE_ENABLED=true)
-// ManyChat (TikTok gateway) <-> Chatwoot API inbox. Sin tráfico cuando está
-// apagado. Ver tiktok-bridge/README.md.
+// ManyChat (TikTok gateway) <-> Chatwoot API inbox.
 // ======================
 if (process.env.TIKTOK_BRIDGE_ENABLED === "true") {
   app.use("/webhooks", createTiktokBridgeRouter());
   console.log("[tiktok-bridge] mounted at /webhooks");
 } else {
-  console.log("[tiktok-bridge] disabled (set TIKTOK_BRIDGE_ENABLED=true to enable)");
-}
-
-// ======================
-// sell-service (opt-in vía SELL_SERVICE_ENABLED=true)
-// Satellite que emula Zendesk Sell API v2 hacia Frappe Cloud REST.
-// Permite migrar gradualmente los 12+ surfaces de Clínyco que llaman a
-// api.getbase.com sin reescribirlos. Ver sell-service/README.md.
-// ======================
-if (process.env.SELL_SERVICE_ENABLED === "true") {
-  app.use("/sell", createSellRouter());
-  console.log("[sell-service] mounted at /sell");
-} else {
-  console.log("[sell-service] disabled (set SELL_SERVICE_ENABLED=true to enable)");
+  console.log("[tiktok-bridge] disabled");
 }
 
 // ======================
 // chatwoot-webhook (opt-in vía CHATWOOT_WEBHOOK_ENABLED=true)
-// Receptor de eventos de Chatwoot. Persiste raw payloads en chatwoot.raw_events.
-// Ver chatwoot-webhook/README.md.
+// Receptor durable de eventos de Chatwoot.
 // ======================
 if (process.env.CHATWOOT_WEBHOOK_ENABLED === "true") {
   app.use(
@@ -69,13 +35,12 @@ if (process.env.CHATWOOT_WEBHOOK_ENABLED === "true") {
   );
   console.log("[chatwoot-webhook] mounted at /chatwoot-webhook");
 } else {
-  console.log("[chatwoot-webhook] disabled (set CHATWOOT_WEBHOOK_ENABLED=true to enable)");
+  console.log("[chatwoot-webhook] disabled");
 }
 
 // ======================
 // confirmations (opt-in vía CONFIRMATIONS_ENABLED=true)
-// Sistema MelanIA: confirmaciones de citas Medinet vía Chatwoot Cloud.
-// Reemplaza CEROAI. Ver confirmations/README.md.
+// MelanIA: confirmaciones de citas Medinet vía Chatwoot Cloud.
 // ======================
 if (process.env.CONFIRMATIONS_ENABLED === "true") {
   app.use(
@@ -86,16 +51,15 @@ if (process.env.CONFIRMATIONS_ENABLED === "true") {
   );
   console.log("[confirmations] mounted at /confirmations");
 } else {
-  console.log("[confirmations] disabled (set CONFIRMATIONS_ENABLED=true to enable)");
+  console.log("[confirmations] disabled");
 }
 
 // ======================
-// In-memory store con TTL
+// In-memory store con TTL para bridge Medinet
 // ======================
 const TTL_MINUTES = Number(process.env.TTL_MINUTES || 60);
 const TTL_MS = Math.max(1, TTL_MINUTES) * 60 * 1000;
-
-const store = new Map(); // key -> { payload, expiresAt }
+const store = new Map();
 
 function cleanupStore() {
   const now = Date.now();
@@ -105,9 +69,6 @@ function cleanupStore() {
 }
 setInterval(cleanupStore, 60 * 1000).unref();
 
-// ======================
-// Helpers RUN / DNI (tu código original intacto)
-// ======================
 const normalizeDni = (value = "") => value.replace(/\D/g, "");
 
 const computeRunVerifier = (digits) => {
@@ -130,7 +91,6 @@ const normalizeAndValidateRun = (value = "") => {
   const compactValue = normalizedInput.replace(/[.\s-]+/g, "");
 
   if (!compactValue) return { isValid: false, error: "RUN vacío" };
-
   if (!/^\d{1,8}[0-9K]$/.test(compactValue)) {
     return { isValid: false, error: "RUN inválido. Usa un RUN chileno válido con DV (0-9 o K)" };
   }
@@ -154,26 +114,18 @@ const formatRunWithDots = (normalizedRun = "") => {
 
 const validateApiKey = (req, res) => {
   const apiKey = process.env.API_KEY;
-
   if (!apiKey) {
-    res.status(500).json({
-      status: "error",
-      message: "Backend sin API_KEY configurada en Render (Environment).",
-    });
+    res.status(500).json({ status: "error", message: "Backend sin API_KEY configurada." });
     return false;
   }
 
-  const requestApiKey = req.header("X-API-Key");
-  if (requestApiKey !== apiKey) {
+  if (req.header("X-API-Key") !== apiKey) {
     res.status(401).json({ status: "error", message: "API key inválida" });
     return false;
   }
   return true;
 };
 
-// ======================
-// CORS solo para Medinet (GET payload)
-// ======================
 const MEDINET_ORIGIN = "https://clinyco.medinetapp.com";
 
 function setMedinetCors(res) {
@@ -188,34 +140,26 @@ app.options("/medinet/payload/:key", (_req, res) => {
   return res.status(204).send("");
 });
 
-// ======================
-// Routes
-// ======================
-app.get("/", (_req, res) => res.send("OK - sell-medinet-backend"));
+app.get("/", (_req, res) => res.send("OK - clinyco integration gateway"));
 
 app.post("/medinet/import", (req, res) => {
   if (!validateApiKey(req, res)) return;
 
   const payload = req.body || {};
   const key = `mf_${randomUUID()}`;
+  store.set(key, { payload, expiresAt: Date.now() + TTL_MS });
 
-  store.set(key, {
-    payload,
-    expiresAt: Date.now() + TTL_MS,
-  });
-
-  const baseMedinetNew =
-    String(process.env.MEDINET_NEW_URL || "https://clinyco.medinetapp.com/pacientes/nuevo/")
-      .trim()
-      .replace(/\/?$/, "/"); // asegura trailing /
-
-  const download_url = `${baseMedinetNew}?mf_key=${encodeURIComponent(key)}`;
+  const baseMedinetNew = String(
+    process.env.MEDINET_NEW_URL || "https://clinyco.medinetapp.com/pacientes/nuevo/"
+  )
+    .trim()
+    .replace(/\/?$/, "/");
 
   return res.status(200).json({
     status: "ok",
     message: "Listo ✅ (payload guardado)",
     key,
-    download_url,
+    download_url: `${baseMedinetNew}?mf_key=${encodeURIComponent(key)}`,
   });
 });
 
@@ -236,7 +180,6 @@ app.get("/medinet/payload/:key", (req, res) => {
   return res.status(200).json(entry.payload);
 });
 
-// Tu endpoint existente, intacto
 app.post("/medinet/search", (req, res) => {
   if (!validateApiKey(req, res)) return;
 
@@ -246,7 +189,6 @@ app.post("/medinet/search", (req, res) => {
   if (!Object.values(IDENTIFIER_TYPES).includes(identifierType)) {
     return res.status(400).json({ status: "error", message: "identifierType inválido. Usa DNI o RUN" });
   }
-
   if (!identifierValue.trim()) {
     return res.status(400).json({ status: "error", message: "identifierValue es requerido" });
   }
@@ -293,15 +235,8 @@ app.use((error, _req, res, next) => {
   return next(error);
 });
 
-const server = app.listen(PORT, () => console.log(`Listening on ${PORT}`));
+const server = app.listen(PORT, () => console.log(`Clinyco integration gateway listening on ${PORT}`));
 
-// ======================
-// Graceful shutdown
-// ======================
-// Render envía SIGTERM en cada deploy/reinicio. Sin manejo explícito el proceso
-// muere de golpe y corta conexiones HTTP en vuelo. Aquí cerramos el listener,
-// dejamos que las requests activas terminen, y luego salimos. Máximo 25s
-// (Render hace SIGKILL a los 30s).
 const SHUTDOWN_TIMEOUT_MS = 25_000;
 let shuttingDown = false;
 

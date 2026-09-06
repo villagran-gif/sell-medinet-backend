@@ -11,7 +11,7 @@ test("DEFAULT_HANDLER es melania", () => {
   assert.equal(DEFAULT_HANDLER, "melania");
 });
 
-test("config por default rutea TODO a melania (behavior-preserving)", () => {
+test("config por default rutea TODO a melania", () => {
   const cfg = parseRoutingConfig({});
   assert.deepEqual(cfg.routes, {});
   assert.deepEqual(cfg.defaultKeys, ["melania"]);
@@ -29,28 +29,25 @@ test("extractInboxId prueba múltiples shapes de Chatwoot", () => {
   assert.equal(extractInboxId(null), null);
 });
 
-test("una ruta explícita por inbox sobreescribe el default", () => {
+test("una ruta explícita puede enviar un inbox a AntonIA y MelanIA", () => {
   const cfg = parseRoutingConfig({
     CHATWOOT_DISPATCH_ROUTES: JSON.stringify({
-      107690: ["support-normalizer", "melania"],
+      107690: ["antonia", "melania"],
     }),
   });
   assert.deepEqual(resolveHandlerKeys({ inbox: { id: 107690 } }, cfg), [
-    "support-normalizer",
+    "antonia",
     "melania",
   ]);
-  // inbox sin ruta explícita cae al default
   assert.deepEqual(resolveHandlerKeys({ inbox: { id: 1 } }, cfg), ["melania"]);
 });
 
-test("CHATWOOT_DISPATCH_DEFAULT redefine los handlers por default", () => {
-  const cfg = parseRoutingConfig({
-    CHATWOOT_DISPATCH_DEFAULT: "support-normalizer, melania",
-  });
-  assert.deepEqual(cfg.defaultKeys, ["support-normalizer", "melania"]);
+test("CHATWOOT_DISPATCH_DEFAULT acepta handlers activos", () => {
+  const cfg = parseRoutingConfig({ CHATWOOT_DISPATCH_DEFAULT: "antonia, melania" });
+  assert.deepEqual(cfg.defaultKeys, ["antonia", "melania"]);
 });
 
-test("JSON inválido en ROUTES cae a default seguro, no rompe", () => {
+test("JSON inválido en ROUTES cae a default seguro", () => {
   const cfg = parseRoutingConfig({ CHATWOOT_DISPATCH_ROUTES: "{no es json" });
   assert.deepEqual(cfg.routes, {});
   assert.deepEqual(cfg.defaultKeys, ["melania"]);

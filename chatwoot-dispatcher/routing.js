@@ -1,20 +1,14 @@
 // chatwoot-dispatcher/routing.js
 //
-// Lógica de ruteo pura: dado un payload de Chatwoot, decide qué handlers lo
-// procesan. Sin DB ni side-effects — testeable en aislamiento.
+// Lógica de ruteo pura: dado un payload de Chatwoot, decide qué handlers activos
+// lo procesan. Handlers soportados: "melania" y "antonia".
 //
 // Config por env:
-//   CHATWOOT_DISPATCH_ROUTES   JSON { "<inbox_id>": ["melania"], "107690": ["support-normalizer","melania"] }
+//   CHATWOOT_DISPATCH_ROUTES   JSON { "<inbox_id>": ["antonia"], "107690": ["antonia","melania"] }
 //   CHATWOOT_DISPATCH_DEFAULT  lista separada por comas (default "melania")
-//
-// Default (sin env): TODO va a "melania" → comportamiento idéntico al previo
-// a este módulo. Los handlers nuevos solo corren cuando un inbox se rutea
-// explícitamente a ellos.
 
 export const DEFAULT_HANDLER = "melania";
 
-// Chatwoot Cloud expone el inbox en distintos lugares según el evento;
-// probamos en orden de preferencia.
 export function extractInboxId(payload) {
   if (!payload || typeof payload !== "object") return null;
   const candidates = [
@@ -66,7 +60,6 @@ export function parseRoutingConfig(env = process.env) {
   return { routes, defaultKeys };
 }
 
-// Resuelve los handler keys para un payload dado la config ya parseada.
 export function resolveHandlerKeys(payload, config) {
   const { routes, defaultKeys } = config;
   const inboxId = extractInboxId(payload);

@@ -1,36 +1,19 @@
-# AGENTS.md — Instrucciones para Codex
+# AGENTS.md
 
 ## Contexto
-Backend Node.js + Express (ESM, Node >=18). Conecta Zendesk Sell con Medinet.
-Deploy: Render (`sell-medinet-backend.onrender.com`). Comparte Postgres con `clinyco_ai`.
 
-Este repo también aloja el **módulo de soporte** que reemplaza Zendesk Support
-de forma incremental. Se monta como router Express en `server.js`.
-
-## Ramas
-- `codex/<slug>` — tus ramas.
-- `claude/<slug>` — ramas de Claude Code (no pisarlas).
-- `main` — solo merges vía PR.
+Backend Node.js + Express (ESM, Node >=18) desplegado en Render. Actúa como **gateway de integración** entre Chatwoot, Clínyco AI/AntonIA, Medinet, Twilio y automatizaciones operacionales.
 
 ## Reglas
-1. No cambiar endpoints existentes sin ticket claro.
-2. Módulos nuevos: carpeta autocontenida + `app.use('/prefix', router)`.
-3. Postgres: schemas separados, usuarios dedicados.
-4. Secretos nunca en repo (`.env` gitignored).
-5. `.github/`, `render.yaml`, `CODEOWNERS`, `CLAUDE.md`, `AGENTS.md`
-   requieren approval humana (CODEOWNERS).
-6. CI verde antes de merge.
 
-## Comandos
-- `npm install`, `npm start`, `npm run dev`
-- `node --check server.js`
+1. Preservar contratos públicos existentes (`/medinet/*`, `/chatwoot-webhook/*`, `/confirmations/*`).
+2. Módulos nuevos: carpeta autocontenida + montaje explícito en `server.js`.
+3. PostgreSQL: schemas separados y migraciones idempotentes.
+4. Secretos sólo en variables de entorno; nunca en Git.
+5. CI debe pasar antes de merge.
+6. Producción se despliega de forma deliberada; un merge no implica asumir que Render ya ejecuta ese commit.
+7. No reintroducir dependencias de Frappe, Zendesk Sell, Zendesk Support ni Sunshine Conversations.
 
-## Style
-- ESM (`import/export`), no CommonJS.
-- Manejo de errores explícito en handlers Express.
-- Validación de input en boundaries (headers, body).
-- Sin dependencias nuevas sin justificación.
+## Arquitectura
 
-## PRs
-Usar `.github/PULL_REQUEST_TEMPLATE.md`. Commits chicos, reversibles.
-Explicar el "por qué" en la descripción del PR.
+Chatwoot -> webhook durable -> `chatwoot.raw_events` -> dispatcher -> `antonia` / `melania`.
