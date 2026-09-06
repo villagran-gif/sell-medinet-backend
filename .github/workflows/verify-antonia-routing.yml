@@ -1,0 +1,26 @@
+name: Verify AntonIA routing
+on:
+  push:
+    branches: [fix/smart-melania-antonia-routing]
+permissions:
+  contents: write
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+      - run: node --check chatwoot-dispatcher/routing.js
+      - run: node --check chatwoot-dispatcher/index.js
+      - run: node --test chatwoot-dispatcher/*.test.js
+      - name: Remove one-shot workflow
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/verify-antonia-routing.yml
+          git commit -m "ci: remove one-shot routing workflow"
+          git push
