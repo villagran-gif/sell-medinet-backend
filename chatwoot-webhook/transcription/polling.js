@@ -27,6 +27,18 @@ function basicAuth() {
   return "Basic " + Buffer.from(`${sid}:${tok}`).toString("base64");
 }
 
+export function isWithinRecentWindow(item, cutoffMs, fields = []) {
+  for (const field of fields) {
+    const raw = item?.[field];
+    if (!raw) continue;
+    const ts = new Date(raw).getTime();
+    if (Number.isFinite(ts)) return ts >= cutoffMs;
+  }
+  // Si Twilio cambia el shape y no trae una fecha parseable, no descartamos
+  // silenciosamente el evento: preferimos procesarlo por seguridad.
+  return true;
+}
+
 async function listRecentRecordings(minutesBack) {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const dateAfter = new Date(Date.now() - minutesBack * 60_000).toISOString().split("T")[0];
@@ -36,7 +48,10 @@ async function listRecentRecordings(minutesBack) {
     throw new Error(`twilio recordings ${res.status}`);
   }
   const data = await res.json();
-  return data.recordings || [];
+  const cutoffMs = Date.now() - minutesBack * 60_000;
+  return (data.recordings || []).filter((rec) =>
+    isWithinRecentWindow(rec, cutoffMs, ["date_created", "date_updated"])
+  );
 }
 
 async function getCallFrom(callSid) {
@@ -63,7 +78,12 @@ async function listRecentInboundCalls(minutesBack, toNumber) {
   const res = await fetch(url, { headers: { Authorization: basicAuth() } });
   if (!res.ok) throw new Error(`twilio calls ${res.status}`);
   const data = await res.json();
-  return (data.calls || []).filter((c) => c.direction === "inbound");
+  const cutoffMs = Date.now() - minutesBack * 60_000;
+  return (data.calls || []).filter(
+    (c) =>
+      c.direction === "inbound" &&
+      isWithinRecentWindow(c, cutoffMs, ["start_time", "date_created", "end_time"])
+  );
 }
 
 // Busca la conversación de Chatwoot del cliente (igual que handler.transcribeByCallSid).
