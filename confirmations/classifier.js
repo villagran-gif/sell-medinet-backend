@@ -35,7 +35,7 @@ function heuristic(text) {
   // Reagendar antes que cancelar: "no puedo, cámbiamela" es reschedule.
   if (
     /\b(reagendar|reagendo|reprogramar|cambiar|cambio|mover|posponer|pasar)\b/.test(t) &&
-    /\b(hora|cita|fecha|dia|semana|lunes|martes|miercoles|jueves|viernes|sabado|domingo|mañana|manana|tarde|temprano|despues|proxima|proximo|otra|otro)\b/.test(t)
+    /\b(hora|cita|fecha|dia|semana|lunes|martes|miercoles|jueves|viernes|sabado|domingo|manana|tarde|temprano|despues|proxima|proximo|otra|otro)\b/.test(t)
   ) {
     return { intent: INTENTS.RESCHEDULE, confidence: 0.95 };
   }
@@ -52,9 +52,9 @@ function heuristic(text) {
     return { intent: INTENTS.CONFIRM, confidence: 0.95 };
   }
 
-  // Cancelación inequívoca.
+  // Cancelación inequívoca. Si además pidió cambio, ya fue capturado arriba.
   if (
-    /\b(cancelar|cancelo|cancela|anular|anulo|anula|no asistire|no asistiré|no voy|ya no voy)\b/.test(t) ||
+    /\b(cancelar|cancelo|cancela|anular|anulo|anula|no asistire|no voy|ya no voy|no puedo ir|no podre ir|no puedo asistir|no podre asistir)\b/.test(t) ||
     /^(no|nop|no gracias)$/i.test(text.trim())
   ) {
     return { intent: INTENTS.CANCEL, confidence: 0.9 };
@@ -63,7 +63,7 @@ function heuristic(text) {
   // Preguntas relacionadas con la cita: no cambian su estado.
   if (
     /[?¿]/.test(text) ||
-    /\b(donde|dónde|direccion|dirección|valor|precio|costo|cuanto|cuánto|estacionamiento|documentos|llevar|ayuno|ubicacion|ubicación)\b/.test(t)
+    /\b(donde|direccion|valor|precio|costo|cuanto|estacionamiento|documentos|llevar|ayuno|ubicacion)\b/.test(t)
   ) {
     return { intent: INTENTS.OTHER, confidence: 0.85 };
   }
