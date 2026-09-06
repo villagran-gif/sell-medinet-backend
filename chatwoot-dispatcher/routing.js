@@ -1,13 +1,11 @@
 // chatwoot-dispatcher/routing.js
 //
-// Lógica de ruteo pura: dado un payload de Chatwoot, decide qué handlers activos
-// lo procesan. Handlers soportados: "melania" y "antonia".
-//
-// Config por env:
-//   CHATWOOT_DISPATCH_ROUTES   JSON { "<inbox_id>": ["antonia"], "107690": ["antonia","melania"] }
-//   CHATWOOT_DISPATCH_DEFAULT  lista separada por comas (default "melania")
+// Todo mensaje conversacional de Chatwoot se entrega a AntonIA.
+// El antiguo consumidor de confirmaciones queda fuera del dispatcher.
+// MelanIA sólo se usa desde clinyco_AI cuando AntonIA necesita consultar
+// disponibilidad real en Medinet.
 
-export const DEFAULT_HANDLER = "melania";
+export const DEFAULT_HANDLER = "antonia";
 
 export function extractInboxId(payload) {
   if (!payload || typeof payload !== "object") return null;
@@ -29,7 +27,10 @@ export function extractInboxId(payload) {
 
 function normalizeKeys(value) {
   const arr = Array.isArray(value) ? value : String(value).split(",");
-  return arr.map((s) => String(s).trim()).filter(Boolean);
+  // Guardrail arquitectónico: el dispatcher conversacional sólo acepta AntonIA.
+  return arr
+    .map((s) => String(s).trim().toLowerCase())
+    .filter((key) => key === "antonia");
 }
 
 export function parseRoutingConfig(env = process.env) {
