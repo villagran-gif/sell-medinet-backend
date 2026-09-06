@@ -1,16 +1,11 @@
-// antonia-bridge/index.js
-//
 // Handler del chatwoot-dispatcher que reenvía un `message_created` a clinyco_AI
-// para que el cerebro de Antonia responda por Chatwoot Cloud. clinyco_AI expone
-// `POST /chatwoot/inbound` (ver módulo chatwoot-adapter en ese repo), que corre
-// la misma lógica que el webhook Sunco `/messages`.
+// para que el core de AntonIA responda por Chatwoot Cloud.
 //
 // Best-effort: si falla, el dispatcher registra el error en raw_events.error.
-// Dormant salvo que un inbox se rutee a "antonia" en el dispatcher.
+// Sólo se ejecuta para inboxes ruteados a "antonia".
 
 const TIMEOUT_MS = Number(process.env.ANTONIA_BRIDGE_TIMEOUT_MS || 8000);
 
-// ev = { id, event_type, payload }
 export async function handleInboundEvent(ev) {
   const baseUrl = process.env.CLINYCO_AI_BASE_URL;
   const token = process.env.CHATWOOT_ADAPTER_TOKEN;
@@ -31,8 +26,6 @@ export async function handleInboundEvent(ev) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      // Reenviamos el payload crudo de Chatwoot; clinyco_AI lo detecta y
-      // normaliza (extractConversationInfo → parseChatwootInbound).
       body: JSON.stringify(ev.payload),
       signal: controller.signal,
     });

@@ -1,29 +1,56 @@
-# sell-medinet-backend
+# Clínyco Integration Gateway
 
-Backend mínimo en Node.js + Express para conectar Zendesk Sell con Medinet mediante endpoints protegidos por API key.
+Este repositorio mantiene la capa de integración que conecta **Chatwoot**, **AntonIA/Clínyco AI**, **Medinet**, **Twilio** y automatizaciones de confirmación.
 
-## Qué hace este servicio
+El nombre histórico del repositorio se conserva por compatibilidad con Render y URLs existentes, pero **Zendesk Sell, Zendesk Support, Sunshine Conversations y Frappe no forman parte del runtime**.
 
-- Expone `GET /` para validar que el backend está activo.
-- Expone `POST /medinet/import` para recibir datos JSON.
-- Expone `POST /medinet/search` para preparar búsquedas por identificador (`DNI` o `RUN`).
-- Protege endpoints con header `X-API-Key` contra la variable de entorno `API_KEY`.
-- Para `RUN`, acepta entrada “humana” (con puntos/guion), **valida DV chileno (módulo 11)** y responde tanto en formato UX como normalizado.
+## Responsabilidades activas
 
----
+- Recepción durable de webhooks de Chatwoot.
+- Persistencia de eventos crudos en PostgreSQL (`chatwoot.*`).
+- Dispatcher por inbox hacia AntonIA y MelanIA.
+- Bridge hacia `clinyco_AI` (`POST /chatwoot/inbound`).
+- Confirmaciones de citas Medinet vía Chatwoot.
+- Bridge Medinet (`/medinet/*`).
+- Transcripción de llamadas y automatizaciones de voz vía Twilio/OpenAI.
+- TikTok bridge cuando está habilitado.
 
-## Requisitos
+## Runtime
 
-- Node.js **>= 18** (ver `"engines"` en `package.json`)
+```text
+Chatwoot
+  -> /chatwoot-webhook/events
+  -> PostgreSQL chatwoot.raw_events
+  -> chatwoot-dispatcher
+       -> antonia -> clinyco_AI
+       -> melania -> confirmations
+```
 
----
+## Endpoints principales
 
-## Variables de entorno
+- `GET /` — health básico.
+- `POST /medinet/import` — bridge temporal de payload hacia Medinet.
+- `GET /medinet/payload/:key` — lectura del payload temporal.
+- `POST /medinet/search` — normalización/validación RUN o DNI.
+- `/chatwoot-webhook/*` — ingestión Chatwoot, voz y transcripciones.
+- `/confirmations/*` — automatización de confirmaciones.
+- `/webhooks/*` — integraciones adicionales habilitadas por flags.
 
-- `API_KEY` (**obligatoria**) — clave que debe venir en el header `X-API-Key`.
-- `PORT` (opcional en local). En Render normalmente viene definida automáticamente.
+## Variables de activación
 
-Ejemplo local:
+- `CHATWOOT_WEBHOOK_ENABLED=true`
+- `CONFIRMATIONS_ENABLED=true`
+- `TIKTOK_BRIDGE_ENABLED=true` cuando corresponda.
+- `CHATWOOT_DISPATCH_ROUTES` para mapear inboxes a `antonia` y/o `melania`.
+
+Los secretos viven exclusivamente en variables de entorno de Render. Nunca deben quedar en Git.
+
+## Desarrollo
+
 ```bash
-export API_KEY="tu_api_key"
-export PORT=3000
+npm install
+npm test
+npm start
+```
+
+Node.js >= 18.
