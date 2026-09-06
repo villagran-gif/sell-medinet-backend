@@ -18,6 +18,7 @@ const DEFAULT_INTERVAL_MS = 120_000;
 const DEFAULT_WINDOW_MIN = 20;
 
 let timer = null;
+let tickInFlight = false;
 
 function basicAuth() {
   const sid = process.env.TWILIO_ACCOUNT_SID;
@@ -110,6 +111,11 @@ async function tickMissedCalls(window) {
   let errors = 0;
   let nomatch = 0;
 
+  // Twilio puede devolver varias llamadas recientes del mismo número. La búsqueda
+  // de contacto + conversaciones en Chatwoot es idéntica para todas ellas dentro
+  // del mismo tick, por lo que la hacemos una sola vez por teléfono.
+  const voiceConvByPhone = new Map();
+
   for (const call of calls) {
     if (call.status !== "completed") continue;
     const dur = Number(call.duration) || 0;
@@ -119,7 +125,7 @@ async function tickMissedCalls(window) {
     const from = call.from;
     if (!callSid || !from) continue;
 
-    // Skip si ya procesamos esta call
+    // Skip rápido si este CallSid ya quedó asociado a un follow-up.
     const existing = await pool.query(
       `SELECT status FROM chatwoot.missed_call_followups WHERE call_sid = $1 LIMIT 1`,
       [callSid]
@@ -130,13 +136,43 @@ async function tickMissedCalls(window) {
     }
 
     try {
-      const conv = await findVoiceConv(from);
+      const phoneKey = String(from).replace(/\D/g, "") || String(from);
+      let conv;
+      if (voiceConvByPhone.has(phoneKey)) {
+        conv = voiceConvByPhone.get(phoneKey);
+      } else {
+        conv = await findVoiceConv(from);
+        voiceConvByPhone.set(phoneKey, conv || null);
+      }
+
       if (!conv) {
         nomatch++;
         continue;
       }
+
+      const conversationId = conv.display_id || conv.id;
+      if (!conversationId) {
+        nomatch++;
+        continue;
+      }
+
+      // La idempotencia durable de missed_call_followups está definida por
+      // conversation_id. Comprobarla aquí evita contar como "processed" un
+      // follow-up que ya estaba resuelto y evita trabajo adicional del handler.
+      const existingConversation = await pool.query(
+        `SELECT status FROM chatwoot.missed_call_followups WHERE conversation_id = $1 LIMIT 1`,
+        [conversationId]
+      );
+      if (existingConversation.rowCount > 0) {
+        const status = existingConversation.rows[0].status;
+        if (status === "sent" || status === "processing" || status === "skipped") {
+          skipped++;
+          continue;
+        }
+      }
+
       await followupFromPolling({
-        conversationId: conv.display_id || conv.id,
+        conversationId,
         callSid,
         customerPhone: from,
         customerName: conv?.meta?.sender?.name || "",
@@ -156,13 +192,23 @@ async function tickMissedCalls(window) {
 }
 
 async function tick() {
-  const window = Number(process.env.CHATWOOT_POLLING_WINDOW_MIN) || DEFAULT_WINDOW_MIN;
+  if (tickInFlight) {
+    console.warn("[polling] tick skipped: previous tick still running");
+    return;
+  }
 
-  // Procesar transcripciones (grabaciones nuevas)
-  await tickTranscriptions(window);
+  tickInFlight = true;
+  try {
+    const window = Number(process.env.CHATWOOT_POLLING_WINDOW_MIN) || DEFAULT_WINDOW_MIN;
 
-  // Procesar missed calls (llamadas con dur baja, sin grabación)
-  await tickMissedCalls(window);
+    // Procesar transcripciones (grabaciones nuevas)
+    await tickTranscriptions(window);
+
+    // Procesar missed calls (llamadas con dur baja, sin grabación)
+    await tickMissedCalls(window);
+  } finally {
+    tickInFlight = false;
+  }
 }
 
 async function tickTranscriptions(window) {
@@ -228,10 +274,24 @@ export function startPolling({
     console.log("[polling] disabled (set CHATWOOT_POLLING_ENABLED=true to enable)");
     return;
   }
+
+  // Este proceso es un safety net, no un sistema en tiempo real. Un intervalo
+  // menor a 2 minutos multiplica consultas innecesarias a Chatwoot y puede
+  // agotar su rate limit. Clampeamos configuraciones heredadas más agresivas.
+  const requestedIntervalMs = Number(intervalMs) || DEFAULT_INTERVAL_MS;
+  const effectiveIntervalMs = Math.max(DEFAULT_INTERVAL_MS, requestedIntervalMs);
+  if (effectiveIntervalMs !== requestedIntervalMs) {
+    console.warn(
+      `[polling] interval=${requestedIntervalMs}ms demasiado agresivo; usando mínimo ${effectiveIntervalMs}ms`
+    );
+  }
+
   tick();
-  timer = setInterval(tick, intervalMs);
+  timer = setInterval(tick, effectiveIntervalMs);
   if (timer.unref) timer.unref();
-  console.log(`[polling] started: interval=${intervalMs}ms window=${process.env.CHATWOOT_POLLING_WINDOW_MIN || DEFAULT_WINDOW_MIN}min`);
+  console.log(
+    `[polling] started: interval=${effectiveIntervalMs}ms window=${process.env.CHATWOOT_POLLING_WINDOW_MIN || DEFAULT_WINDOW_MIN}min`
+  );
 }
 
 export function stopPolling() {

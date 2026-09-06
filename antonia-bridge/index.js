@@ -3,8 +3,20 @@
 //
 // Best-effort: si falla, el dispatcher registra el error en raw_events.error.
 // Sólo se ejecuta para inboxes ruteados a "antonia".
+//
+// clinyco_AI puede consultar OpenAI y Medinet; esas rutas tienen operaciones
+// legítimas que pueden superar ampliamente 8 segundos. El bridge debe darles
+// margen suficiente y reportar un timeout explícito si realmente se agota.
 
-const TIMEOUT_MS = Number(process.env.ANTONIA_BRIDGE_TIMEOUT_MS || 8000);
+const DEFAULT_TIMEOUT_MS = 90_000;
+const MIN_TIMEOUT_MS = 10_000;
+const configuredTimeoutMs = Number(process.env.ANTONIA_BRIDGE_TIMEOUT_MS);
+const TIMEOUT_MS = Math.max(
+  MIN_TIMEOUT_MS,
+  Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
+    ? configuredTimeoutMs
+    : DEFAULT_TIMEOUT_MS
+);
 
 export async function handleInboundEvent(ev) {
   const baseUrl = process.env.CLINYCO_AI_BASE_URL;
@@ -34,6 +46,11 @@ export async function handleInboundEvent(ev) {
       throw new Error(`clinyco_AI /chatwoot/inbound ${res.status}: ${body.slice(0, 200)}`);
     }
     return { forwarded: true };
+  } catch (err) {
+    if (err?.name === "AbortError") {
+      throw new Error(`clinyco_AI /chatwoot/inbound timeout after ${TIMEOUT_MS}ms`);
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
   }
