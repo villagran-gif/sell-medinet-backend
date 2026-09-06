@@ -1,21 +1,26 @@
 /**
- * Clasificador de respuestas del paciente vía Claude Haiku 4.5.
+ * Clasificador de respuestas del paciente vía OpenAI.
  *
  * Toma el texto que el paciente envió por WhatsApp (recibido vía
  * Chatwoot webhook → chatwoot.raw_events) y devuelve la intención
  * dentro de la taxonomía cerrada del flujo MelanIA.
  *
- * Sin nuevas dependencias: fetch nativo contra api.anthropic.com.
+ * Sin nuevas dependencias: fetch nativo contra OpenAI Responses API.
+ *
+ * Diseño costo/latencia:
+ *   1. Resolver primero respuestas obvias con matcher heurístico.
+ *   2. Llamar al LLM sólo cuando el mensaje realmente necesita desambiguación.
+ *   3. Si OpenAI falla, volver al matcher heurístico y nunca cortar el flujo.
  *
  * Modo dry-run / heurístico:
- *   - Si ANTHROPIC_API_KEY no está seteada, o
+ *   - Si OPENAI_API_KEY no está seteada, o
  *   - Si CONFIRMATIONS_CLASSIFIER_DRY_RUN=true,
- * cae a un matcher por palabras clave. Útil para tests locales y para
- * el primer despliegue antes de habilitar tráfico LLM real.
+ * cae completamente al matcher por palabras clave.
  */
 
-const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const MODEL = process.env.CONFIRMATIONS_CLASSIFIER_MODEL || "claude-haiku-4-5-20251001";
+const OPENAI_API_URL = "https://api.openai.com/v1/responses";
+const MODEL = process.env.CONFIRMATIONS_CLASSIFIER_MODEL || "gpt-5-nano";
+const TIMEOUT_MS = Math.max(1000, Number(process.env.CONFIRMATIONS_CLASSIFIER_TIMEOUT_MS || 5000));
 
 export const INTENTS = Object.freeze({
   CONFIRM: "confirm",
@@ -24,6 +29,8 @@ export const INTENTS = Object.freeze({
   OTHER: "other",
   AMBIGUOUS: "ambiguous",
 });
+
+const INTENT_VALUES = Object.freeze(Object.values(INTENTS));
 
 const SYSTEM_PROMPT = `Eres MelanIA, asistente de Clínyco que clasifica respuestas de pacientes a confirmaciones de cita médica enviadas por WhatsApp.
 
@@ -34,19 +41,25 @@ Tu única tarea es decidir la intención del paciente entre estas 5 categorías:
 - "other": el mensaje es relevante a la cita pero no encaja en las tres anteriores (pregunta de dirección, costo, etc.).
 - "ambiguous": no hay forma razonable de decidir.
 
-Responde SOLO con un JSON válido sin texto adicional ni markdown:
-{"intent": "...", "confidence": 0.0-1.0}
+Prioriza el significado completo del mensaje. Si alguien dice "no puedo, ¿se puede pasar para la próxima semana?" es reschedule, no cancel.
+No agregues explicaciones.`;
 
-Ejemplos:
-Paciente: "Sí, ahí estaré gracias"        → {"intent":"confirm","confidence":0.97}
-Paciente: "No, no podré asistir"           → {"intent":"cancel","confidence":0.96}
-Paciente: "puedo cambiarla a otro día?"    → {"intent":"reschedule","confidence":0.94}
-Paciente: "cuanto cuesta la consulta?"     → {"intent":"other","confidence":0.9}
-Paciente: "👍"                              → {"intent":"confirm","confidence":0.85}
-Paciente: "ok"                              → {"intent":"confirm","confidence":0.8}
-Paciente: "ya"                              → {"intent":"ambiguous","confidence":0.5}
-Paciente: "REAGENDAR"                       → {"intent":"reschedule","confidence":0.99}
-Paciente: "no puedo, ¿se puede pasar para la próxima semana?" → {"intent":"reschedule","confidence":0.92}`;
+const RESPONSE_SCHEMA = Object.freeze({
+  type: "object",
+  properties: {
+    intent: {
+      type: "string",
+      enum: INTENT_VALUES,
+    },
+    confidence: {
+      type: "number",
+      minimum: 0,
+      maximum: 1,
+    },
+  },
+  required: ["intent", "confidence"],
+  additionalProperties: false,
+});
 
 /**
  * Clasifica un mensaje de paciente. Nunca lanza por errores de LLM:
@@ -54,9 +67,8 @@ Paciente: "no puedo, ¿se puede pasar para la próxima semana?" → {"intent":"r
  *
  * @param {string} message  texto crudo del paciente
  * @param {object} [opts]
- * @param {object} [opts.appointment]  contexto opcional (no se inyecta al
- *   prompt todavía — reservado para una iteración futura si necesitamos
- *   desambiguar respuestas tipo "el lunes mejor").
+ * @param {object} [opts.appointment] contexto opcional reservado para una
+ *   iteración futura si necesitamos desambiguar respuestas tipo "el lunes mejor".
  *
  * @returns {Promise<{intent: string, confidence: number, model: string, raw?: string}>}
  */
@@ -66,68 +78,117 @@ export async function classifyInbound(message, _opts = {}) {
     return { intent: INTENTS.AMBIGUOUS, confidence: 0, model: "empty" };
   }
 
+  const fast = heuristic(text);
+
+  // La mayoría de las respuestas de confirmación son inequívocas. No vale la pena
+  // pagar ni agregar latencia por un LLM cuando el matcher ya tiene alta confianza.
+  if (fast.intent !== INTENTS.AMBIGUOUS && fast.confidence >= 0.8) {
+    return { ...fast, model: "heuristic" };
+  }
+
   if (isDryRun()) {
-    return { ...heuristic(text), model: "heuristic" };
+    return { ...fast, model: "heuristic" };
   }
 
   try {
-    const result = await classifyViaAnthropic(text);
-    return result;
+    return await classifyViaOpenAI(text);
   } catch (err) {
-    console.error("[confirmations/classifier] anthropic failed, falling back:", err.message);
-    return { ...heuristic(text), model: "fallback" };
+    console.error("[confirmations/classifier] openai failed, falling back:", err.message);
+    return { ...fast, model: "fallback" };
   }
 }
 
 function isDryRun() {
   if (process.env.CONFIRMATIONS_CLASSIFIER_DRY_RUN === "true") return true;
-  if (!process.env.ANTHROPIC_API_KEY) return true;
+  if (!process.env.OPENAI_API_KEY) return true;
   return false;
 }
 
-async function classifyViaAnthropic(text) {
-  const res = await fetch(ANTHROPIC_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 64,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: `Paciente: ${text}` }],
-    }),
-  });
+function reasoningEffortForModel(model) {
+  const configured = String(process.env.CONFIRMATIONS_CLASSIFIER_REASONING || "").trim();
+  if (configured) return configured;
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`anthropic ${res.status}: ${body.slice(0, 200)}`);
+  // gpt-5-nano usa la nomenclatura antigua donde el mínimo es `minimal`.
+  if (/^gpt-5-nano(?:$|-)/i.test(model)) return "minimal";
+
+  // Modelos nano/luna más nuevos aceptan `none`, ideal para clasificación.
+  return "none";
+}
+
+async function classifyViaOpenAI(text) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  try {
+    const res = await fetch(OPENAI_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: MODEL,
+        store: false,
+        reasoning: {
+          effort: reasoningEffortForModel(MODEL),
+        },
+        max_output_tokens: 256,
+        input: [
+          { role: "developer", content: SYSTEM_PROMPT },
+          { role: "user", content: `Paciente: ${text}` },
+        ],
+        text: {
+          verbosity: "low",
+          format: {
+            type: "json_schema",
+            name: "appointment_confirmation_intent",
+            strict: true,
+            schema: RESPONSE_SCHEMA,
+          },
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`openai ${res.status}: ${body.slice(0, 200)}`);
+    }
+
+    const json = await res.json();
+    const content = extractResponseText(json).trim();
+    const parsed = parseJsonStrict(content);
+    if (!parsed) {
+      throw new Error(`unparseable model output: ${content.slice(0, 200)}`);
+    }
+
+    const intent = normalizeIntent(parsed.intent);
+    const confidence = clamp01(Number(parsed.confidence));
+    return { intent, confidence, model: MODEL, raw: content };
+  } finally {
+    clearTimeout(timer);
   }
+}
 
-  const json = await res.json();
-  const content = (json?.content || [])
-    .filter((b) => b.type === "text")
-    .map((b) => b.text)
-    .join("")
-    .trim();
+function extractResponseText(json) {
+  if (typeof json?.output_text === "string") return json.output_text;
 
-  const parsed = parseJsonStrict(content);
-  if (!parsed) {
-    throw new Error(`unparseable model output: ${content.slice(0, 200)}`);
+  const chunks = [];
+  for (const item of Array.isArray(json?.output) ? json.output : []) {
+    for (const part of Array.isArray(item?.content) ? item.content : []) {
+      if (part?.type === "output_text" && typeof part.text === "string") {
+        chunks.push(part.text);
+      }
+    }
   }
-
-  const intent = normalizeIntent(parsed.intent);
-  const confidence = clamp01(Number(parsed.confidence));
-  return { intent, confidence, model: MODEL, raw: content };
+  return chunks.join("");
 }
 
 function parseJsonStrict(s) {
   try {
     return JSON.parse(s);
   } catch {
-    // Permitimos un pequeño envoltorio de markdown por si el modelo se desliza.
+    // Structured Outputs debería evitar esto, pero mantenemos tolerancia defensiva.
     const m = /\{[\s\S]*\}/.exec(s);
     if (!m) return null;
     try {
@@ -140,7 +201,7 @@ function parseJsonStrict(s) {
 
 function normalizeIntent(v) {
   const s = String(v || "").toLowerCase().trim();
-  return Object.values(INTENTS).includes(s) ? s : INTENTS.AMBIGUOUS;
+  return INTENT_VALUES.includes(s) ? s : INTENTS.AMBIGUOUS;
 }
 
 function clamp01(n) {
@@ -149,24 +210,26 @@ function clamp01(n) {
 }
 
 /**
- * Fallback determinista por keywords. Cubre las respuestas más comunes
- * (>80% de los casos según los logs históricos de CEROAI). Suficiente
- * para que el flujo no se cuelgue cuando el LLM no esté disponible.
+ * Matcher determinista por keywords. Cubre las respuestas más comunes
+ * (>80% de los casos según los logs históricos de CEROAI).
+ *
+ * Importante: RESCHEDULE se evalúa antes que CANCEL porque frases como
+ * "no puedo, ¿puedo cambiarla?" deben interpretarse como reprogramación.
  */
 function heuristic(text) {
   const t = text
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, ""); // sin acentos
+    .replace(/[\u0300-\u036f]/g, "");
 
-  if (/\b(reagendar|cambiar|reprogramar|otro dia|otra hora|otra fecha|posponer)\b/.test(t)) {
-    return { intent: INTENTS.RESCHEDULE, confidence: 0.85 };
+  if (/\b(reagendar|cambiar|reprogramar|otro dia|otra hora|otra fecha|posponer|pasar para|mover la hora|moverla)\b/.test(t)) {
+    return { intent: INTENTS.RESCHEDULE, confidence: 0.9 };
   }
   if (/\b(si|sip|claro|ok|dale|confirmo|ahi estare|alli estare|asistire|voy|confirmada?)\b/.test(t) || /^(👍|✅|si\b)/.test(t)) {
-    return { intent: INTENTS.CONFIRM, confidence: 0.8 };
+    return { intent: INTENTS.CONFIRM, confidence: 0.85 };
   }
   if (/\b(no|cancel(ar|o|a)|anular|anula|ya no|no puedo|no podre|no asistire)\b/.test(t)) {
-    return { intent: INTENTS.CANCEL, confidence: 0.8 };
+    return { intent: INTENTS.CANCEL, confidence: 0.85 };
   }
   return { intent: INTENTS.AMBIGUOUS, confidence: 0.4 };
 }
