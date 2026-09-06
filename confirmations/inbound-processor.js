@@ -1,10 +1,9 @@
 /**
- * Handler MelanIA de confirmaciones — un consumidor del chatwoot-dispatcher.
+ * Handler de confirmaciones de citas — consumidor aislado del dispatcher.
  *
- * `handleInboundEvent(ev)` recibe un `message_created` ya reclamado por el
- * dispatcher (que es quien posee el claim FOR UPDATE SKIP LOCKED y el cursor
- * `processed_at`). Filtra mensajes incoming, los clasifica con Haiku 4.5 y
- * aplica la transición correspondiente en `confirmations.appointments`.
+ * Sólo actúa cuando existe una cita que está esperando confirmación o
+ * recordatorio para el teléfono entrante. Si no hay una cita pendiente,
+ * sale inmediatamente: no clasifica, no registra y no interfiere con AntonIA.
  *
  * `processInboundQueue` queda como shim deprecado que delega al dispatcher,
  * por compatibilidad de imports.
@@ -22,9 +21,6 @@ const HANDOFF_TIMEOUT_MS = 8_000;
 
 /**
  * @deprecated El claim + ruteo de la cola ahora vive en chatwoot-dispatcher.
- * Este shim se mantiene por compatibilidad de imports y delega al dispatcher,
- * que rutea a este módulo vía el handler "melania" (default). Ver
- * chatwoot-dispatcher/README.md.
  */
 export async function processInboundQueue(opts = {}) {
   const { dispatchPending } = await import("../chatwoot-dispatcher/index.js");
@@ -32,49 +28,57 @@ export async function processInboundQueue(opts = {}) {
 }
 
 export async function handleInboundEvent(ev) {
-  // Nota: el evento YA está marcado como processed por el atomic claim
-  // del chatwoot-dispatcher. No re-marcamos processed_at acá.
+  // El evento ya está reclamado por el dispatcher.
   const message = extractMessage(ev.payload);
   if (!message) {
-    return { skipped: true };
+    return { skipped: true, reason: "not_incoming_message" };
   }
 
+  // Filtro crítico de aislamiento: una conversación normal NO es una
+  // confirmación de cita. No clasificar nada si no existe una cita activa
+  // esperando respuesta para este teléfono.
   const appointment = await findAppointmentByInboundPhone(message.phone);
+  if (!appointment) {
+    return {
+      skipped: true,
+      reason: "no_pending_confirmation",
+      matchedAppointment: false,
+    };
+  }
+
   const decision = await classifyInbound(message.content, { appointment });
 
   await logClassification({
     rawEventId: ev.id,
-    appointmentId: appointment?.id ?? null,
+    appointmentId: appointment.id,
     intent: decision.intent,
     confidence: decision.confidence,
     rawMessage: message.content,
     model: decision.model,
   });
 
+  const updated = await applyIntent(appointment.id, decision.intent);
+
   let handoff = false;
+  if (decision.intent === INTENTS.RESCHEDULE) {
+    handoff = await triggerRescheduleHandoff(appointment, message);
+  }
+
+  // Acuse best-effort dentro de la ventana abierta por el paciente.
   let acked = false;
-  if (appointment) {
-    const updated = await applyIntent(appointment.id, decision.intent);
-    if (decision.intent === INTENTS.RESCHEDULE) {
-      handoff = await triggerRescheduleHandoff(appointment, message);
-    }
-    // Acuse al paciente — texto plano en la conversación (ventana 24h
-    // ya abierta porque el paciente acaba de responder). Best-effort:
-    // si falla, queda registrada la transición igual.
-    try {
-      const ackResult = await sendAcknowledgment(updated || appointment, decision.intent);
-      acked = !!ackResult?.sent;
-    } catch (err) {
-      console.error(
-        `[confirmations/inbound-processor] ack para appointment ${appointment.id} falló:`,
-        err.message
-      );
-    }
+  try {
+    const ackResult = await sendAcknowledgment(updated || appointment, decision.intent);
+    acked = !!ackResult?.sent;
+  } catch (err) {
+    console.error(
+      `[confirmations/inbound-processor] ack para appointment ${appointment.id} falló:`,
+      err.message
+    );
   }
 
   return {
     classified: true,
-    matchedAppointment: !!appointment,
+    matchedAppointment: true,
     handoff,
     acked,
   };
@@ -82,16 +86,7 @@ export async function handleInboundEvent(ev) {
 
 /**
  * Extrae phone + content del payload de Chatwoot `message_created`.
- * Solo procesa mensajes incoming (del paciente), no echoes del bot.
- *
- * Estructura típica (resumida):
- *   {
- *     event: "message_created",
- *     message_type: "incoming",
- *     content: "Sí, ahí estaré",
- *     sender: { phone_number: "+56912345678", ... },
- *     conversation: { id: 123, ... }
- *   }
+ * Sólo procesa mensajes incoming (del paciente), no echoes del bot.
  */
 function extractMessage(payload) {
   if (!payload) return null;
@@ -114,12 +109,8 @@ function extractMessage(payload) {
 }
 
 /**
- * Notifica a clinyco_AI (VPS chileno) que el paciente quiere reagendar.
- * El endpoint /melania/start-from-confirmation arranca el flujo Antonia
- * con el contexto de la cita actual.
- *
- * Best-effort: si falla, queda registrada la transición a
- * reschedule_requested igual, y el siguiente tick puede reintentar.
+ * Si el paciente pide reagendar, deriva al flujo correspondiente en clinyco_AI.
+ * Best-effort: si falla, la transición reschedule_requested queda registrada.
  */
 async function triggerRescheduleHandoff(appointment, message) {
   const baseUrl = process.env.CLINYCO_AI_BASE_URL;
