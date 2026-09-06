@@ -1,15 +1,13 @@
 // chatwoot-dispatcher/index.js
 //
 // Único consumidor de `chatwoot.raw_events` (eventos `message_created`).
-// Reclama eventos con FOR UPDATE SKIP LOCKED y los rutea a handlers activos
-// según inbox_id. Los únicos handlers soportados son MelanIA y AntonIA.
+// Reclama eventos con FOR UPDATE SKIP LOCKED y los entrega a AntonIA.
+// El antiguo flujo de confirmaciones ya no es consumidor del inbox.
 
 import { getPool } from "../chatwoot-webhook/db.js";
 import { parseRoutingConfig, resolveHandlerKeys } from "./routing.js";
 
 const HANDLER_LOADERS = {
-  melania: () =>
-    import("../confirmations/inbound-processor.js").then((m) => m.handleInboundEvent),
   antonia: () =>
     import("../antonia-bridge/index.js").then((m) => m.handleInboundEvent),
 };
