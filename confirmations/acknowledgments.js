@@ -1,33 +1,17 @@
 /**
- * Mensajes de acuse de recibo que MelanIA envía al paciente DESPUÉS
- * de procesar su respuesta al HSM inicial.
+ * Acuses del flujo simple de confirmaciones de cita.
  *
- * Se envían como texto libre (no template) porque la ventana 24h ya
- * está abierta — el paciente acaba de responder al HSM. Es lo que
- * cierra el bucle UX: el paciente sabe que su acción fue procesada.
- *
- * Llamado desde inbound-processor.js::triggerAck después de applyIntent.
+ * Sólo confirm/cancel/reschedule generan respuesta. Mensajes ambiguos u otras
+ * preguntas no deben ser contestados por este módulo para no interferir con
+ * AntonIA ni con un agente humano.
  */
 
 import { sendTextMessage } from "./chatwoot-client.js";
 
-// Extras estáticos por sucursal: info no estándar de Medinet que vale
-// la pena agregar al mensaje de confirmación (parking, accesos, etc.).
-// Si una sucursal cambia, actualizar acá. Map keyed por branch_id.
 const BRANCH_EXTRAS = {
   39: "🅿️ Contamos con 150 estacionamientos subterráneos (ingreso al final de la calle lateral).",
 };
 
-/**
- * Construye y envía el acuse al paciente.
- *
- * @param {object} appointment  row de confirmations.appointments (después
- *                              de applyIntent, con state actualizado)
- * @param {string} intent       confirm | cancel | reschedule | other | ambiguous
- *
- * Si la cita no tiene chatwoot_conversation_id (raro pero posible si el
- * 1er mensaje se mandó sin guardar conv), skip silencioso.
- */
 export async function sendAcknowledgment(appointment, intent) {
   if (!appointment?.chatwoot_conversation_id) {
     console.warn(
@@ -57,7 +41,7 @@ export async function sendAcknowledgment(appointment, intent) {
 }
 
 /**
- * Genera el texto del ack según el intent. Exportada para tests.
+ * Sólo tres intenciones tienen respuesta automática.
  */
 export function buildAckText(appointment, intent) {
   const name = shortFirstName(appointment.patient_name);
@@ -71,7 +55,6 @@ export function buildAckText(appointment, intent) {
       return buildRescheduleAck(name);
     case "ambiguous":
     case "other":
-      return buildAmbiguousAck(name);
     default:
       return null;
   }
@@ -80,7 +63,6 @@ export function buildAckText(appointment, intent) {
 function buildConfirmAck(appointment, name) {
   const lines = [`¡Perfecto ${name}! ✅ Tu cita queda confirmada.`, ""];
 
-  // Detalles
   const when = `${formatDate(appointment.appointment_at)} a las ${formatTime(
     appointment.appointment_at
   )}`;
@@ -93,15 +75,9 @@ function buildConfirmAck(appointment, name) {
     lines.push(`🩺 ${parts.join(" ")}`);
   }
 
-  // Sucursal + dirección
-  if (appointment.branch_name) {
-    lines.push(`📍 ${appointment.branch_name}`);
-  }
-  if (appointment.branch_address) {
-    lines.push(appointment.branch_address);
-  }
+  if (appointment.branch_name) lines.push(`📍 ${appointment.branch_name}`);
+  if (appointment.branch_address) lines.push(appointment.branch_address);
 
-  // Extras de sucursal (parking, accesos, etc.)
   const extras = BRANCH_EXTRAS[appointment.branch_id];
   if (extras) {
     lines.push("");
@@ -121,20 +97,9 @@ function buildCancelAck(name) {
 }
 
 function buildRescheduleAck(name) {
-  // Por ahora solo acuse. La Fase 1b va a reemplazar este texto por la
-  // lista real de slots disponibles consultados a Medinet en vivo.
   return (
     `Entendido ${name}. Déjame buscar opciones disponibles 🔍\n\n` +
     `En instantes te paso las próximas fechas en que podríamos reagendar tu cita.`
-  );
-}
-
-function buildAmbiguousAck(name) {
-  return (
-    `No entendí tu mensaje 🤔. Por favor responde:\n\n` +
-    `✅ SÍ para confirmar\n` +
-    `❌ NO para cancelar\n` +
-    `📅 REAGENDAR para cambiar fecha`
   );
 }
 
