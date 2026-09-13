@@ -1,91 +1,56 @@
-// chatwoot-dispatcher/index.js
-//
-// Único consumidor de `chatwoot.raw_events` (eventos `message_created`).
-// Reclama eventos con FOR UPDATE SKIP LOCKED y los entrega a AntonIA.
-// El antiguo flujo de confirmaciones ya no es consumidor del inbox.
+// A claim is not a delivery. Never automatically replay an uncertain patient
+// message: the core may already have replied or booked an appointment.
+import { getPool } from '../chatwoot-webhook/db.js';
+import { parseRoutingConfig, resolveHandlerKeys } from './routing.js';
 
-import { getPool } from "../chatwoot-webhook/db.js";
-import { parseRoutingConfig, resolveHandlerKeys } from "./routing.js";
-
-const HANDLER_LOADERS = {
-  antonia: () =>
-    import("../antonia-bridge/index.js").then((m) => m.handleInboundEvent),
-};
-
-const handlerCache = new Map();
+const schemaReady = new WeakMap();
+export async function ensureDeliveryState(pool) {
+  if (!schemaReady.has(pool)) schemaReady.set(pool, pool.query(`
+    ALTER TABLE chatwoot.raw_events
+      ADD COLUMN IF NOT EXISTS dispatch_state text,
+      ADD COLUMN IF NOT EXISTS dispatch_started_at timestamptz,
+      ADD COLUMN IF NOT EXISTS dispatch_finished_at timestamptz;
+  `).catch(error => { schemaReady.delete(pool); throw error; }));
+  await schemaReady.get(pool);
+}
 async function loadHandler(key) {
-  if (handlerCache.has(key)) return handlerCache.get(key);
-  const loader = HANDLER_LOADERS[key];
-  if (!loader) return null;
-  const fn = await loader();
-  handlerCache.set(key, fn);
-  return fn;
+  if (key !== 'antonia') throw new Error('unknown_handler');
+  return (await import('../antonia-bridge/index.js')).handleInboundEvent;
 }
-
-const CLAIM_SQL = `
-  WITH next AS (
-    SELECT id
-      FROM chatwoot.raw_events
-     WHERE processed_at IS NULL
-       AND event_type = 'message_created'
-     ORDER BY received_at ASC
-     LIMIT $1
-       FOR UPDATE SKIP LOCKED
-  )
-  UPDATE chatwoot.raw_events r
-     SET processed_at = now()
-    FROM next
-   WHERE r.id = next.id
-  RETURNING r.id, r.event_type, r.payload
-`;
-
-async function recordError(pool, id, message) {
-  try {
-    await pool.query("UPDATE chatwoot.raw_events SET error = $2 WHERE id = $1", [
-      id,
-      String(message).slice(0, 500),
-    ]);
-  } catch (err) {
-    console.error("[chatwoot-dispatcher] no se pudo registrar el error:", err.message);
-  }
-}
-
-export async function dispatchPending({ limit = 50 } = {}) {
-  const pool = getPool();
-  const config = parseRoutingConfig();
-  const { rows } = await pool.query(CLAIM_SQL, [limit]);
-
-  const summary = { scanned: rows.length, dispatched: 0, errors: 0, byHandler: {} };
-
-  for (const ev of rows) {
-    const keys = resolveHandlerKeys(ev.payload, config);
-    for (const key of keys) {
-      let handler;
-      try {
-        handler = await loadHandler(key);
-      } catch (err) {
-        summary.errors++;
-        console.error(`[chatwoot-dispatcher] no se pudo cargar handler '${key}':`, err.message);
-        continue;
-      }
-      if (!handler) {
-        summary.errors++;
-        await recordError(pool, ev.id, `handler desconocido: ${key}`);
-        console.warn(`[chatwoot-dispatcher] handler desconocido '${key}' (evento ${ev.id})`);
-        continue;
-      }
-      try {
-        await handler(ev);
-        summary.dispatched++;
+export async function dispatchPending({ limit = 50, pool = getPool(), handlerLoader = loadHandler, config = parseRoutingConfig() } = {}) {
+  await ensureDeliveryState(pool);
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 100));
+  await pool.query(`UPDATE chatwoot.raw_events SET dispatch_state='needs_review',
+    dispatch_finished_at=now(),error='delivery_uncertain: interrupted dispatcher'
+    WHERE dispatch_state='processing' AND dispatch_started_at<now()-interval '30 minutes' AND processed_at IS NULL`);
+  const summary = { scanned: 0, dispatched: 0, errors: 0, byHandler: {} };
+  for (let i = 0; i < safeLimit; i++) {
+    // Reserve only the event being sent, so a slow request does not hold a batch.
+    const { rows } = await pool.query(`WITH next AS (
+      SELECT id FROM chatwoot.raw_events
+      WHERE processed_at IS NULL AND error IS NULL AND dispatch_state IS NULL
+        AND event_type='message_created'
+      ORDER BY received_at ASC,id ASC LIMIT 1 FOR UPDATE SKIP LOCKED
+    ) UPDATE chatwoot.raw_events r SET dispatch_state='processing',dispatch_started_at=now()
+      FROM next WHERE r.id=next.id RETURNING r.id,r.event_type,r.payload`);
+    if (!rows.length) break;
+    const ev = rows[0]; summary.scanned++;
+    try {
+      const keys = resolveHandlerKeys(ev.payload, config);
+      if (!keys.length) throw new Error('no_handler');
+      for (const key of keys) {
+        const result = await (await handlerLoader(key))(ev);
+        if (result?.forwarded !== true) throw new Error('delivery_not_confirmed');
         summary.byHandler[key] = (summary.byHandler[key] || 0) + 1;
-      } catch (err) {
-        summary.errors++;
-        await recordError(pool, ev.id, `${key}: ${err.message}`);
-        console.error(
-          `[chatwoot-dispatcher] handler '${key}' falló en evento ${ev.id}:`,
-          err.message
-        );
       }
+      await pool.query(`UPDATE chatwoot.raw_events SET processed_at=now(),dispatch_state='delivered',
+        dispatch_finished_at=now(),error=NULL WHERE id=$1 AND dispatch_state='processing'`, [ev.id]);
+      summary.dispatched++;
+    } catch (error) {
+      summary.errors++;
+      await pool.query(`UPDATE chatwoot.raw_events SET dispatch_state='needs_review',
+        dispatch_finished_at=now(),error=$2 WHERE id=$1 AND processed_at IS NULL`, [ev.id, String(error.message).slice(0, 500)]);
+      console.error(`[chatwoot-dispatcher] event ${ev.id}:`, error.message);
     }
   }
   return summary;
