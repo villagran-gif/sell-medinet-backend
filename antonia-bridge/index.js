@@ -18,21 +18,18 @@ const TIMEOUT_MS = Math.max(
     : DEFAULT_TIMEOUT_MS
 );
 
-export async function handleInboundEvent(ev) {
+export async function handleInboundEvent(ev, { fetchImpl = fetch } = {}) {
   const baseUrl = process.env.CLINYCO_AI_BASE_URL;
   const token = process.env.CHATWOOT_ADAPTER_TOKEN;
   if (!baseUrl || !token) {
-    console.warn(
-      "[antonia-bridge] skip — falta CLINYCO_AI_BASE_URL o CHATWOOT_ADAPTER_TOKEN"
-    );
-    return { skipped: true };
+    throw new Error('antonia_not_configured');
   }
 
   const url = `${baseUrl.replace(/\/+$/, "")}/chatwoot/inbound`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
+    const res = await fetchImpl(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -45,6 +42,8 @@ export async function handleInboundEvent(ev) {
       const body = await res.text();
       throw new Error(`clinyco_AI /chatwoot/inbound ${res.status}: ${body.slice(0, 200)}`);
     }
+    const result = await res.json();
+    if (result?.ok !== true) throw new Error('clinyco_AI delivery_not_confirmed');
     return { forwarded: true };
   } catch (err) {
     if (err?.name === "AbortError") {
