@@ -23,14 +23,23 @@ export function parseWebhook(body) {
   }
   return events;
 }
+export function metaConfig(env=process.env) {
+  return {
+    token: env.ATTENDANCE_META_TOKEN || env.META_WHATSAPP_SYSTEM_TOKEN || env.META_ACCESS_TOKEN,
+    appSecret: env.ATTENDANCE_META_APP_SECRET || env.META_APP_SECRET,
+    version: env.ATTENDANCE_META_VERSION || 'v25.0'
+  };
+}
 export async function sendMeta(phone, body, {env=process.env, fetchImpl=fetch}={}) {
-  if(env.ATTENDANCE_DIRECT_SEND_ENABLED!=='true') throw Error('direct_send_disabled');
-  if(env.ATTENDANCE_DIRECT_CUTOVER_VERIFIED!=='true') throw Error('direct_cutover_not_verified');
+  const testOverride=env.ATTENDANCE_DIRECT_MODE!=='live' && phone===TRIAL_PHONE && env.ATTENDANCE_DIRECT_TEST_SEND_ENABLED==='true';
+  if(env.ATTENDANCE_DIRECT_SEND_ENABLED!=='true' && !testOverride) throw Error('direct_send_disabled');
+  if(env.ATTENDANCE_DIRECT_CUTOVER_VERIFIED!=='true' && !testOverride) throw Error('direct_cutover_not_verified');
   if(!/^569\d{8}$/.test(phone)) throw Error('invalid_phone');
   if(env.ATTENDANCE_DIRECT_MODE!=='live' && phone!==TRIAL_PHONE) throw Error('trial_recipient_only');
-  if(!env.ATTENDANCE_META_TOKEN || !/^v\d+\.\d+$/.test(env.ATTENDANCE_META_VERSION||'')) throw Error('meta_config_missing');
-  const r=await fetchImpl(`https://graph.facebook.com/${env.ATTENDANCE_META_VERSION}/${PHONE_ID}/messages`,{
-    method:'POST',headers:{Authorization:`Bearer ${env.ATTENDANCE_META_TOKEN}`,'Content-Type':'application/json'},
+  const {token,version}=metaConfig(env);
+  if(!token || !/^v\d+\.\d+$/.test(version||'')) throw Error('meta_config_missing');
+  const r=await fetchImpl(`https://graph.facebook.com/${version}/${PHONE_ID}/messages`,{
+    method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
     body:JSON.stringify({...body,messaging_product:'whatsapp',to:phone}),signal:AbortSignal.timeout(15000)
   });
   const data=await r.json();
