@@ -58,11 +58,12 @@ export function parseRoutingConfig(env = process.env) {
     : [DEFAULT_HANDLER];
   if (!defaultKeys.length) defaultKeys = [DEFAULT_HANDLER];
 
-  return { routes, defaultKeys };
+  return { routes, defaultKeys, attendanceEnabled: env.ATTENDANCE_ENABLED === 'true', attendanceLive: env.ATTENDANCE_MODE === 'live' };
 }
 
 export function resolveHandlerKeys(payload, config) {
   const { routes, defaultKeys } = config;
+  if (config.attendanceEnabled && Number(payload?.account?.id) === 162472 && extractInboxId(payload) === 107690 && (config.attendanceLive || Number(payload?.conversation?.id) === 399)) return ['attendance'];
   const inboxId = extractInboxId(payload);
   if (inboxId != null && routes[String(inboxId)]) {
     return routes[String(inboxId)];

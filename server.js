@@ -4,6 +4,8 @@ import { createTiktokBridgeRouter } from "./tiktok-bridge/index.js";
 import { createChatwootWebhookRouter } from "./chatwoot-webhook/index.js";
 import { createConfirmationsRouter } from "./confirmations/index.js";
 
+import { attendanceRouter } from './attendance/router.js';
+import { tick as attendanceTick, startupTrial } from './attendance/engine.js';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -52,6 +54,14 @@ if (process.env.CONFIRMATIONS_ENABLED === "true") {
   console.log("[confirmations] mounted at /confirmations");
 } else {
   console.log("[confirmations] disabled");
+}
+
+if (process.env.ATTENDANCE_ENABLED === 'true') {
+  app.use('/attendance', attendanceRouter());
+  const runAttendance = () => attendanceTick().catch(e => console.error('[attendance/tick]',e.message));
+  setInterval(runAttendance, 30000).unref();
+  console.log('[attendance] dedicated inbox 107690 enabled');
+  startupTrial().then(r=>{if(r)console.log('[attendance/trial]',JSON.stringify(r));}).catch(e=>console.error('[attendance/trial]',e.message));
 }
 
 // ======================

@@ -14,6 +14,7 @@ export async function ensureDeliveryState(pool) {
   await schemaReady.get(pool);
 }
 async function loadHandler(key) {
+  if (key === 'attendance') return (await import('../attendance/engine.js')).handleInboundEvent;
   if (key !== 'antonia') throw new Error('unknown_handler');
   return (await import('../antonia-bridge/index.js')).handleInboundEvent;
 }
@@ -27,9 +28,16 @@ export async function dispatchPending({ limit = 50, pool = getPool(), handlerLoa
   for (let i = 0; i < safeLimit; i++) {
     // Reserve only the event being sent, so a slow request does not hold a batch.
     const { rows } = await pool.query(`WITH next AS (
-      SELECT id FROM chatwoot.raw_events
+      SELECT id FROM chatwoot.raw_events candidate
       WHERE processed_at IS NULL AND error IS NULL AND dispatch_state IS NULL
         AND event_type='message_created'
+        AND NOT (COALESCE(candidate.payload->'conversation'->>'inbox_id','')='107690' AND EXISTS (
+          SELECT 1 FROM chatwoot.raw_events prior WHERE prior.id<candidate.id
+            AND prior.payload->'conversation'->>'id'=candidate.payload->'conversation'->>'id'
+            AND prior.payload->'account'->>'id'=candidate.payload->'account'->>'id'
+            AND prior.event_type='message_created' AND prior.processed_at IS NULL
+            AND prior.error IS NULL AND (prior.dispatch_state IS NULL OR prior.dispatch_state='processing')
+        ))
       ORDER BY received_at ASC,id ASC LIMIT 1 FOR UPDATE SKIP LOCKED
     ) UPDATE chatwoot.raw_events r SET dispatch_state='processing',dispatch_started_at=now()
       FROM next WHERE r.id=next.id RETURNING r.id,r.event_type,r.payload`);

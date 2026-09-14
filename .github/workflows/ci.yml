@@ -8,6 +8,15 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: isolated-ci-only
+          POSTGRES_DB: attendance_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -17,6 +26,14 @@ jobs:
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+
+      - name: Unit and regression tests
+        run: npm test
+
+      - name: Isolated PostgreSQL integration
+        env:
+          ATTENDANCE_TEST_DATABASE_URL: postgres://postgres:isolated-ci-only@localhost:5432/attendance_test
+        run: node attendance/integration-check.mjs
 
       - name: Syntax check
         run: node --check server.js
