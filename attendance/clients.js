@@ -66,3 +66,12 @@ export async function ensureLabel() {
   if(!Array.isArray(labels))throw new Error('labels_unavailable');
   if(!labels.some(x=>x.title==='confirmacion_automatica'))await cw('/labels',{title:'confirmacion_automatica',description:'Confirmaciones de citas por WhatsApp',color:'#168878',show_on_sidebar:true});
 }
+
+export async function rescheduleWithMelania(a,text) {
+  const base=String(process.env.CLINYCO_AI_BASE_URL||'').replace(/\/+$/,'');
+  const token=process.env.CLINYCO_AI_HANDOFF_TOKEN;
+  if(!base||!token)throw new Error('melania_reschedule_config_missing');
+  const r=await fetch(`${base}/melania/reschedule-direct`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+    body:JSON.stringify({external_id:a.id,branch_id:a.branchId,patient:{phone:a.phone,name:a.patient,run:a.patientRun,email:a.patientEmail},professional:{id:a.professionalId,name:a.professional},appointment_at:`${a.date}T${a.time}:00-03:00`,inbound_message:String(text||'') }),signal:AbortSignal.timeout(30000)});
+  const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`melania_reschedule_${r.status}_${data.error||'failed'}`);return data;
+}
