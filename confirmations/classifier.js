@@ -32,6 +32,10 @@ export async function classifyInbound(message, _opts = {}) {
 function heuristic(text) {
   const t = normalize(text);
 
+  if (/\b(?:puede|podria|podemos) ser (?:mas tarde|mas temprano|otro dia)\b/.test(t)) {
+    return { intent: INTENTS.RESCHEDULE, confidence: 0.95 };
+  }
+
   // Reagendar antes que cancelar: "no puedo, cámbiamela" es reschedule.
   if (
     /\b(reagendar|reagendo|reprogramar|cambiar|cambio|mover|posponer|pasar)\b/.test(t) &&
@@ -41,6 +45,19 @@ function heuristic(text) {
   }
   if (/\b(reagendar|reprogramar|otra hora|otra fecha|otro dia|cambiar la hora|cambiar hora|mover la hora|posponer)\b/.test(t)) {
     return { intent: INTENTS.RESCHEDULE, confidence: 0.95 };
+  }
+
+  // A question or a negated/conditional acceptance is not attendance consent.
+  // "No puedo" alone does not distinguish cancelling from asking to move it.
+  if (/[?¿]/.test(text) || /\b(donde|direccion|valor|precio|costo|cuanto|ubicacion)\b/.test(t)) {
+    return { intent: INTENTS.OTHER, confidence: 0.85 };
+  }
+  if (/\b(no|pero|depende|quizas|tal vez|si puedo)\b/.test(t) &&
+      /\b(confirmo|confirmad[oa]|asistire|estare|voy|nos vemos)\b/.test(t)) {
+    if (/\b(no asistire|no voy|ya no voy)\b/.test(t) && !/\b(confirmo|pero|depende)\b/.test(t)) {
+      return { intent: INTENTS.CANCEL, confidence: 0.9 };
+    }
+    return { intent: INTENTS.AMBIGUOUS, confidence: 0.4 };
   }
 
   // Confirmaciones comunes de WhatsApp.
