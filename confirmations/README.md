@@ -1,5 +1,7 @@
 # confirmations — Sistema MelanIA de confirmaciones de citas
 
+> Estado verificado en septiembre de 2026: módulo histórico deshabilitado y fuera del dispatcher. El texto siguiente describe su diseño original, no una operación activa. El clasificador actual es determinista. `process-inbound` delega al dispatcher de Antonia; no consume confirmaciones. Los estados locales `confirmed`/`cancelled` no acreditan escrituras en Medinet. No activar hasta resolver asociación de cita, sincronización, deduplicación y pausa humana. Ver [diagnóstico de asistencia](../docs/attendance-confirmation-audit.md).
+
 Reemplaza CEROAI. Recibe citas Medinet empujadas desde clinyco_AI
 (VPS chileno), envía la confirmación inicial vía WhatsApp / Chatwoot
 Cloud, recibe la respuesta del paciente, la clasifica con Claude Haiku

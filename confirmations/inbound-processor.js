@@ -58,6 +58,9 @@ export async function handleInboundEvent(ev) {
   });
 
   const updated = await applyIntent(appointment.id, decision.intent);
+  if (!updated) {
+    return { classified: true, matchedAppointment: true, acked: false, handoff: false, reason: 'appointment_update_unverified' };
+  }
 
   let handoff = false;
   if (decision.intent === INTENTS.RESCHEDULE) {
@@ -67,7 +70,7 @@ export async function handleInboundEvent(ev) {
   // Acuse best-effort dentro de la ventana abierta por el paciente.
   let acked = false;
   try {
-    const ackResult = await sendAcknowledgment(updated || appointment, decision.intent);
+    const ackResult = await sendAcknowledgment(updated, decision.intent);
     acked = !!ackResult?.sent;
   } catch (err) {
     console.error(
