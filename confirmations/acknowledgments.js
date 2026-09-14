@@ -44,6 +44,11 @@ export async function sendAcknowledgment(appointment, intent) {
  * Sólo tres intenciones tienen respuesta automática.
  */
 export function buildAckText(appointment, intent) {
+  // These legacy states describe a persisted patient response only. This
+  // module has no Medinet writer or read-back receipt, even if medinet_state
+  // contains a previously imported "Confirmado" value.
+  const expectedState = { confirm: 'confirmed', cancel: 'cancelled', reschedule: 'reschedule_requested' }[intent];
+  if (!expectedState || appointment?.state !== expectedState) return null;
   const name = shortFirstName(appointment.patient_name);
 
   switch (intent) {
@@ -61,7 +66,7 @@ export function buildAckText(appointment, intent) {
 }
 
 function buildConfirmAck(appointment, name) {
-  const lines = [`¡Perfecto ${name}! ✅ Tu cita queda confirmada.`, ""];
+  const lines = [`${name}, registramos que asistirás a esta cita. No tengo comprobante de actualización en la agenda.`, ""];
 
   const when = `${formatDate(appointment.appointment_at)} a las ${formatTime(
     appointment.appointment_at
@@ -91,15 +96,13 @@ function buildConfirmAck(appointment, name) {
 
 function buildCancelAck(name) {
   return (
-    `Listo ${name}, tu cita queda cancelada ❌.\n\n` +
-    `Si necesitas reagendar puedes entrar a clinyco.cl/agenda o responder por aquí.`
+    `${name}, registramos tu solicitud de cancelación. No tengo comprobante de cancelación en la agenda.`
   );
 }
 
 function buildRescheduleAck(name) {
   return (
-    `Entendido ${name}. Déjame buscar opciones disponibles 🔍\n\n` +
-    `En instantes te paso las próximas fechas en que podríamos reagendar tu cita.`
+    `${name}, registramos tu solicitud de cambio. Esta gestión no modifica la cita original ni confirma una nueva hora.`
   );
 }
 

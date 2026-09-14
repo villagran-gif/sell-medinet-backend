@@ -34,7 +34,8 @@ const DEFAULT_TEMPLATE_LANGUAGE = process.env.CHATWOOT_HSM_LANGUAGE || "es_CL";
 
 export function isDryRun() {
   // Default: true. Para activar tráfico real, setear CHATWOOT_DRY_RUN=false.
-  return process.env.CHATWOOT_DRY_RUN !== "false";
+  return process.env.CONFIRMATIONS_LIVE_SEND_ENABLED !== "true"
+    || process.env.CHATWOOT_DRY_RUN !== "false";
 }
 
 function requireEnv(name) {
@@ -51,10 +52,28 @@ function accountId() {
   return process.env.CHATWOOT_ACCOUNT_ID || DEFAULT_ACCOUNT_ID;
 }
 
+// Deliberately scoped: never inherit the retired confirmations inbox.
+const MAIN_INBOX_ID = 110652;
+const MAIN_PHONE = "56953386191";
+
 function inboxId() {
-  // Inbox de WhatsApp en Chatwoot Cloud. Requerido para enviar HSM.
-  // Pendiente: el usuario debe setearlo cuando cree el inbox WA en Chatwoot.
-  return requireEnv("CHATWOOT_INBOX_ID");
+  return MAIN_INBOX_ID;
+}
+
+async function verifyMainChannel(conversationId) {
+  const inbox = await chatwootFetch(`/inboxes/${inboxId()}`);
+  if (Number(inbox?.id) !== MAIN_INBOX_ID
+      || inbox?.channel_type !== "Channel::Whatsapp"
+      || String(inbox?.phone_number || "").replace(/\D/g, "") !== MAIN_PHONE) {
+    throw new Error("confirmations: main WhatsApp channel unverified; no send");
+  }
+  if (conversationId !== undefined) {
+    const conversation = await chatwootFetch(`/conversations/${conversationId}`);
+    if (Number(conversation?.id) !== Number(conversationId)
+        || Number(conversation?.inbox_id) !== MAIN_INBOX_ID) {
+      throw new Error("confirmations: conversation belongs to an unverified channel; no send");
+    }
+  }
 }
 
 async function chatwootFetch(path, { method = "GET", body } = {}) {
@@ -118,6 +137,8 @@ export async function findOrCreateContact({ phone, name, email, identifier }) {
     };
   }
 
+  await verifyMainChannel();
+
   // 1) Buscar por teléfono.
   const search = await chatwootFetch(
     `/contacts/search?q=${encodeURIComponent(phone)}`,
@@ -176,6 +197,8 @@ export async function startConversationWithTemplate({
     };
   }
 
+  await verifyMainChannel();
+
   const resp = await chatwootFetch("/conversations", {
     method: "POST",
     body: {
@@ -221,6 +244,8 @@ export async function sendTemplateInConversation({
     };
   }
 
+  await verifyMainChannel(conversationId);
+
   const resp = await chatwootFetch(
     `/conversations/${conversationId}/messages`,
     {
@@ -256,6 +281,8 @@ export async function sendTextMessage({ conversationId, content }) {
     });
     return { messageId: `dry_run_msg_text_${Date.now()}`, dryRun: true };
   }
+
+  await verifyMainChannel(conversationId);
 
   const resp = await chatwootFetch(`/conversations/${conversationId}/messages`, {
     method: "POST",
