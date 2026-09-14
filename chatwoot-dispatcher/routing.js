@@ -30,7 +30,7 @@ function normalizeKeys(value) {
   // Guardrail arquitectónico: el dispatcher conversacional sólo acepta AntonIA.
   return arr
     .map((s) => String(s).trim().toLowerCase())
-    .filter((key) => key === "antonia");
+    .filter((key) => ['antonia','attendance_direct_chatwoot'].includes(key));
 }
 
 export function parseRoutingConfig(env = process.env) {
@@ -58,11 +58,12 @@ export function parseRoutingConfig(env = process.env) {
     : [DEFAULT_HANDLER];
   if (!defaultKeys.length) defaultKeys = [DEFAULT_HANDLER];
 
-  return { routes, defaultKeys, attendanceEnabled: env.ATTENDANCE_ENABLED === 'true', attendanceLive: env.ATTENDANCE_MODE === 'live' };
+  return { routes, defaultKeys, attendanceEnabled: env.ATTENDANCE_ENABLED === 'true', attendanceLive: env.ATTENDANCE_MODE === 'live', directChatwootBridge: env.ATTENDANCE_DIRECT_CHATWOOT_BRIDGE_ENABLED === 'true', directMode: env.ATTENDANCE_DIRECT_MODE || 'test' };
 }
 
 export function resolveHandlerKeys(payload, config) {
   const { routes, defaultKeys } = config;
+  if (config.directChatwootBridge && Number(payload?.account?.id) === 162472 && extractInboxId(payload) === 107690 && (config.directMode === 'live' || Number(payload?.conversation?.id) === 399)) return ['attendance_direct_chatwoot'];
   if (config.attendanceEnabled && Number(payload?.account?.id) === 162472 && extractInboxId(payload) === 107690 && (config.attendanceLive || Number(payload?.conversation?.id) === 399)) return ['attendance'];
   const inboxId = extractInboxId(payload);
   if (inboxId != null && routes[String(inboxId)]) {

@@ -15,6 +15,7 @@ export async function ensureDeliveryState(pool) {
 }
 async function loadHandler(key) {
   if (key === 'attendance') return (await import('../attendance/engine.js')).handleInboundEvent;
+  if (key === 'attendance_direct_chatwoot') return (await import('../attendance-direct/chatwoot-bridge.js')).handleInboundEvent;
   if (key !== 'antonia') throw new Error('unknown_handler');
   return (await import('../antonia-bridge/index.js')).handleInboundEvent;
 }
