@@ -72,6 +72,6 @@ export async function rescheduleWithMelania(a,text) {
   const token=process.env.CLINYCO_AI_HANDOFF_TOKEN;
   if(!base||!token)throw new Error('melania_reschedule_config_missing');
   const r=await fetch(`${base}/melania/reschedule-direct`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
-    body:JSON.stringify({external_id:a.id,branch_id:a.branchId,patient:{phone:a.phone,name:a.patient,run:a.patientRun,email:a.patientEmail},professional:{id:a.professionalId,name:a.professional},appointment_at:`${a.date}T${a.time}:00-03:00`,inbound_message:String(text||'') }),signal:AbortSignal.timeout(30000)});
+    body:JSON.stringify({external_id:a.id,branch_id:a.branchId,branch:{id:a.branchId,name:a.branch||''},patient:{phone:a.phone,name:a.patient,run:a.patientRun,email:a.patientEmail},professional:{id:a.professionalId,name:a.professional},appointment_at:`${a.date}T${a.time}:00-03:00`,inbound_message:String(text||'') }),signal:AbortSignal.timeout(30000)});
   const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`melania_reschedule_${r.status}_${data.error||'failed'}`);return data;
 }
