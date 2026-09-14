@@ -6,12 +6,28 @@ import { createConfirmationsRouter } from "./confirmations/index.js";
 
 import { attendanceRouter } from './attendance/router.js';
 import { tick as attendanceTick, startupTrial } from './attendance/engine.js';
+import { webhookRouter as directWebhook, operatorRouter as directOperator } from './attendance-direct/router.js';
+import { processEvents as directTick } from './attendance-direct/engine.js';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const IDENTIFIER_TYPES = { DNI: "DNI", RUN: "RUN" };
 
+// Raw bytes are required for Meta HMAC verification, before the JSON parser.
+if (process.env.ATTENDANCE_DIRECT_ENABLED === 'true') {
+  app.use('/attendance-direct/webhook', directWebhook());
+}
 app.use(express.json({ limit: "1mb" }));
+if (process.env.ATTENDANCE_DIRECT_ENABLED === 'true') {
+  app.use('/attendance-direct', directOperator());
+  let busy = false;
+  setInterval(async () => {
+    if (busy || process.env.ATTENDANCE_DIRECT_SEND_ENABLED !== 'true' || process.env.ATTENDANCE_DIRECT_CUTOVER_VERIFIED !== 'true') return;
+    busy = true;
+    try { await directTick(); } catch { console.error('[attendance-direct] worker unavailable'); }
+    finally { busy = false; }
+  }, 5000).unref();
+}
 
 // ======================
 // tiktok-bridge (opt-in vía TIKTOK_BRIDGE_ENABLED=true)
