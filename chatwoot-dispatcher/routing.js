@@ -7,6 +7,24 @@
 
 export const DEFAULT_HANDLER = "antonia";
 
+export const digits = value => String(value || '').replace(/\D/g, '');
+
+export function extractSenderPhone(payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  const candidates = [
+    payload.sender?.phone_number,
+    payload.conversation?.meta?.sender?.phone_number,
+    payload.contact?.phone_number,
+    payload.conversation?.contact?.phone_number,
+    payload.contact_inbox?.source_id,
+  ];
+  for (const value of candidates) {
+    const phone = digits(value);
+    if (/^569\d{8}$/.test(phone)) return phone;
+  }
+  return '';
+}
+
 export function extractInboxId(payload) {
   if (!payload || typeof payload !== "object") return null;
   const candidates = [
@@ -27,7 +45,7 @@ export function extractInboxId(payload) {
 
 function normalizeKeys(value) {
   const arr = Array.isArray(value) ? value : String(value).split(",");
-  // Guardrail arquitectónico: el dispatcher conversacional sólo acepta AntonIA.
+  // Only approved conversational handlers may be selected by configuration.
   return arr
     .map((s) => String(s).trim().toLowerCase())
     .filter((key) => ['antonia','attendance_direct_chatwoot'].includes(key));
@@ -63,7 +81,8 @@ export function parseRoutingConfig(env = process.env) {
 
 export function resolveHandlerKeys(payload, config) {
   const { routes, defaultKeys } = config;
-  if (config.directChatwootBridge && Number(payload?.account?.id) === 162472 && extractInboxId(payload) === 107690 && (config.directMode === 'live' || Number(payload?.conversation?.id) === 399)) return ['attendance_direct_chatwoot'];
+  if (config.directChatwootBridge && Number(payload?.account?.id) === 162472 && extractInboxId(payload) === 107690
+      && (config.directMode === 'live' || extractSenderPhone(payload) === '56987297033')) return ['attendance_direct_chatwoot'];
   if (config.attendanceEnabled && Number(payload?.account?.id) === 162472 && extractInboxId(payload) === 107690 && (config.attendanceLive || Number(payload?.conversation?.id) === 399)) return ['attendance'];
   const inboxId = extractInboxId(payload);
   if (inboxId != null && routes[String(inboxId)]) {

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   extractInboxId,
+  extractSenderPhone,
   parseRoutingConfig,
   resolveHandlerKeys,
   DEFAULT_HANDLER,
@@ -27,6 +28,33 @@ test("extractInboxId prueba múltiples shapes de Chatwoot", () => {
   assert.equal(extractInboxId({ contact_inbox: { inbox_id: 10 } }), 10);
   assert.equal(extractInboxId({}), null);
   assert.equal(extractInboxId(null), null);
+});
+
+
+test("extractSenderPhone reconoce shapes reales de Chatwoot", () => {
+  assert.equal(extractSenderPhone({ sender: { phone_number: "+56 9 8729 7033" } }), "56987297033");
+  assert.equal(extractSenderPhone({ conversation: { meta: { sender: { phone_number: "56987297033" } } } }), "56987297033");
+  assert.equal(extractSenderPhone({ contact: { phone_number: "+56987297033" } }), "56987297033");
+  assert.equal(extractSenderPhone({}), "");
+});
+
+test("puente directo en test usa teléfono de prueba y no conversation id", () => {
+  const cfg = parseRoutingConfig({
+    ATTENDANCE_DIRECT_CHATWOOT_BRIDGE_ENABLED: "true",
+    ATTENDANCE_DIRECT_MODE: "test",
+  });
+  const base = { account: { id: 162472 }, conversation: { id: 11738, inbox_id: 107690 } };
+  assert.deepEqual(resolveHandlerKeys({ ...base, sender: { phone_number: "+56987297033" } }, cfg), ["attendance_direct_chatwoot"]);
+  assert.deepEqual(resolveHandlerKeys({ ...base, sender: { phone_number: "+56911111111" } }, cfg), ["antonia"]);
+});
+
+test("puente directo live toma todo el inbox exclusivo", () => {
+  const cfg = parseRoutingConfig({
+    ATTENDANCE_DIRECT_CHATWOOT_BRIDGE_ENABLED: "true",
+    ATTENDANCE_DIRECT_MODE: "live",
+  });
+  const payload = { account: { id: 162472 }, conversation: { id: 99123, inbox_id: 107690 }, sender: { phone_number: "+56911111111" } };
+  assert.deepEqual(resolveHandlerKeys(payload, cfg), ["attendance_direct_chatwoot"]);
 });
 
 test("una ruta antigua que incluya melania queda sólo en AntonIA", () => {
