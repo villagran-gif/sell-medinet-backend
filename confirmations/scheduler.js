@@ -133,6 +133,9 @@ async function sendFirstMessageFor(apt) {
     appointmentId: apt.id,
     templateName: TEMPLATES.CONFIRM_APPOINTMENT,
     templateParams: params,
+    appointmentRevision: apt.revision,
+    chatwootConversationId: numericOrNull(conversationId),
+    chatwootInboxId: 110652,
     chatwootMessageId: numericOrNull(messageId),
     dryRun: chatwootDryRun(),
   });
@@ -192,6 +195,7 @@ async function sendReminderFor(apt) {
   const fallback = buildFallbackText(apt, "remind");
 
   let messageId = null;
+  let conversationId = apt.chatwoot_conversation_id;
   if (apt.chatwoot_conversation_id) {
     // La conversación ya existe del 1er mensaje — reusarla.
     const r = await sendTemplateInConversation({
@@ -219,6 +223,7 @@ async function sendReminderFor(apt) {
       fallbackText: fallback,
     });
     messageId = r.messageId;
+    conversationId = r.conversationId;
     await markFirstMessageSent({
       appointmentId: apt.id,
       chatwootContactId: numericOrNull(contact.id),
@@ -230,6 +235,9 @@ async function sendReminderFor(apt) {
     appointmentId: apt.id,
     templateName: TEMPLATES.REMIND_76H,
     templateParams: params,
+    appointmentRevision: apt.revision,
+    chatwootConversationId: numericOrNull(conversationId),
+    chatwootInboxId: 110652,
     chatwootMessageId: numericOrNull(messageId),
     dryRun: chatwootDryRun(),
   });

@@ -133,28 +133,29 @@ export async function upsertAppointment(normalized) {
 }
 
 /**
- * Busca una cita que REALMENTE esté esperando respuesta del paciente.
+ * Busca una cita mediante una respuesta explícita al mensaje registrado.
  *
+ * Exige canal, conversación, versión y cita futura; no elige por teléfono.
  * Sólo first_msg_sent/reminder_sent califican. Una cita apenas scheduled,
  * ya confirmed o ya reschedule_requested NO debe capturar mensajes normales
  * de WhatsApp ni interferir con AntonIA.
  */
-export async function findAppointmentByInboundPhone(phone) {
-  if (!phone) return null;
-  const pool = getPool();
-  const { rows } = await pool.query(
-    `
-    SELECT *
-    FROM confirmations.appointments
-    WHERE patient_phone = $1
-      AND state IN ('first_msg_sent', 'reminder_sent')
-      AND appointment_at > now() - interval '24 hours'
-    ORDER BY appointment_at ASC
-    LIMIT 1
-    `,
-    [phone]
-  );
-  return rows[0] || null;
+export async function findAppointmentByReply(message) {
+  const { rows } = await getPool().query(`
+    SELECT a.* FROM confirmations.appointments a
+    JOIN confirmations.outbound_messages o ON o.appointment_id = a.id
+    WHERE regexp_replace(a.patient_phone, '[^0-9]', '', 'g') = $1
+      AND a.chatwoot_conversation_id = $2
+      AND o.chatwoot_conversation_id = $2
+      AND o.chatwoot_inbox_id = $3
+      AND o.chatwoot_message_id = $4
+      AND o.appointment_revision = a.revision
+      AND o.dry_run = false AND o.error IS NULL
+      AND a.state IN ('first_msg_sent', 'reminder_sent')
+      AND a.appointment_at > now()
+      AND a.medinet_state IN ('Agendado', 'Confirmado', 'Re-agendado')
+    LIMIT 2`, [message.phone, message.conversationId, message.inboxId, message.replyTo]);
+  return rows.length === 1 ? rows[0] : null;
 }
 
 /**
@@ -170,19 +171,25 @@ export async function findAppointmentByInboundPhone(phone) {
  *
  * Returns el row actualizado.
  */
-export async function applyIntent(appointmentId, intent) {
+export async function applyIntent(appointmentId, intent, revision) {
+  if (!Number.isSafeInteger(Number(revision)) || Number(revision) < 1) return null;
   const pool = getPool();
   const nextState = intentToState(intent);
   const sql = nextState
     ? `UPDATE confirmations.appointments
          SET state = $2, last_inbound_at = now(), updated_at = now()
-       WHERE id = $1
+       WHERE id = $1 AND revision = $3
+         AND state IN ('first_msg_sent', 'reminder_sent')
+         AND appointment_at > now()
+         AND medinet_state IN ('Agendado', 'Confirmado', 'Re-agendado')
        RETURNING *`
     : `UPDATE confirmations.appointments
          SET last_inbound_at = now(), updated_at = now()
-       WHERE id = $1
+       WHERE id = $1 AND revision = $2
+         AND state IN ('first_msg_sent', 'reminder_sent')
+         AND appointment_at > now()
        RETURNING *`;
-  const params = nextState ? [appointmentId, nextState] : [appointmentId];
+  const params = nextState ? [appointmentId, nextState, revision] : [appointmentId, revision];
   const { rows } = await pool.query(sql, params);
   return rows[0] || null;
 }
@@ -282,13 +289,16 @@ export async function logOutbound({
   chatwootMessageId,
   dryRun,
   error,
+  appointmentRevision = null,
+  chatwootConversationId = null,
+  chatwootInboxId = null,
 }) {
   const pool = getPool();
   const { rows } = await pool.query(
     `
     INSERT INTO confirmations.outbound_messages
-      (appointment_id, template_name, template_params, chatwoot_message_id, dry_run, error)
-    VALUES ($1, $2, $3, $4, $5, $6)
+      (appointment_id, template_name, template_params, chatwoot_message_id, dry_run, error, appointment_revision, chatwoot_conversation_id, chatwoot_inbox_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     ON CONFLICT (appointment_id, template_name) WHERE error IS NULL
       DO NOTHING
     RETURNING id
@@ -300,6 +310,7 @@ export async function logOutbound({
       chatwootMessageId,
       !!dryRun,
       error || null,
+      appointmentRevision, chatwootConversationId, chatwootInboxId,
     ]
   );
   return rows[0]?.id || null;

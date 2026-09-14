@@ -2,16 +2,17 @@
  * Handler de confirmaciones de citas — consumidor aislado del dispatcher.
  *
  * Sólo actúa cuando existe una cita que está esperando confirmación o
- * recordatorio para el teléfono entrante. Si no hay una cita pendiente,
+ * recordatorio citado explícitamente en la misma conversación. Si no hay una cita pendiente,
  * sale inmediatamente: no clasifica, no registra y no interfiere con AntonIA.
  *
  * `processInboundQueue` queda como shim deprecado que delega al dispatcher,
  * por compatibilidad de imports.
  */
 
+import { extractAttendanceReply } from "./reply-context.js";
 import { classifyInbound, INTENTS } from "./classifier.js";
 import {
-  findAppointmentByInboundPhone,
+  findAppointmentByReply,
   applyIntent,
   logClassification,
 } from "./lifecycle.js";
@@ -29,15 +30,15 @@ export async function processInboundQueue(opts = {}) {
 
 export async function handleInboundEvent(ev) {
   // El evento ya está reclamado por el dispatcher.
-  const message = extractMessage(ev.payload);
+  const message = extractAttendanceReply(ev.payload);
   if (!message) {
     return { skipped: true, reason: "not_incoming_message" };
   }
 
   // Filtro crítico de aislamiento: una conversación normal NO es una
   // confirmación de cita. No clasificar nada si no existe una cita activa
-  // esperando respuesta para este teléfono.
-  const appointment = await findAppointmentByInboundPhone(message.phone);
+  // esperando respuesta al mensaje citado y para esta versión de la cita.
+  const appointment = await findAppointmentByReply(message);
   if (!appointment) {
     return {
       skipped: true,
@@ -57,7 +58,7 @@ export async function handleInboundEvent(ev) {
     model: decision.model,
   });
 
-  const updated = await applyIntent(appointment.id, decision.intent);
+  const updated = await applyIntent(appointment.id, decision.intent, appointment.revision);
   if (!updated) {
     return { classified: true, matchedAppointment: true, acked: false, handoff: false, reason: 'appointment_update_unverified' };
   }
@@ -84,30 +85,6 @@ export async function handleInboundEvent(ev) {
     matchedAppointment: true,
     handoff,
     acked,
-  };
-}
-
-/**
- * Extrae phone + content del payload de Chatwoot `message_created`.
- * Sólo procesa mensajes incoming (del paciente), no echoes del bot.
- */
-function extractMessage(payload) {
-  if (!payload) return null;
-  if (payload.message_type && payload.message_type !== "incoming") return null;
-
-  const content = String(payload.content || "").trim();
-  if (!content) return null;
-
-  const phone =
-    payload?.sender?.phone_number ||
-    payload?.conversation?.meta?.sender?.phone_number ||
-    null;
-  if (!phone) return null;
-
-  return {
-    phone: String(phone).trim(),
-    content,
-    conversationId: payload?.conversation?.id ?? null,
   };
 }
 

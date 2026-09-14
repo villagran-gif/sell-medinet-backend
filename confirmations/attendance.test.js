@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
+import {extractAttendanceReply} from './reply-context.js';
 import {classifyInbound} from './classifier.js';
 import {buildAckText} from './acknowledgments.js';
 
@@ -40,10 +41,10 @@ function handler({update,find=async()=>apt}) {
   let acks=0,classified=0;
   const run=vm.runInNewContext(source+'\nhandleInboundEvent',{
     console,process:{env:{}},classifyInbound,INTENTS:{RESCHEDULE:'reschedule'},
-    findAppointmentByInboundPhone:find,logClassification:async()=>{classified++},applyIntent:update,
+    extractAttendanceReply,findAppointmentByReply:find,logClassification:async()=>{classified++},applyIntent:update,
     sendAcknowledgment:async()=>{acks++;return {sent:true}}
   });
-  return {run:()=>run({id:1,payload:{message_type:'incoming',content:'Confirmo',sender:{phone_number:'+56911111111'},conversation:{id:11}}}),get acks(){return acks},get classified(){return classified}};
+  return {run:()=>run({id:1,payload:{account:{id:162472},id:20,event:'message_created',content_attributes:{in_reply_to:10},message_type:'incoming',content:'Confirmo',sender:{phone_number:'+56911111111'},conversation:{id:11,inbox_id:110652}}}),get acks(){return acks},get classified(){return classified}};
 }
 test('zero-row update emits no acknowledgment or reschedule handoff',async()=>{
   const f=handler({update:async()=>null});const r=await f.run();
