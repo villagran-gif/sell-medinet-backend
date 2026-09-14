@@ -9,10 +9,13 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test chatwoot-dispatcher/*.test.js confirmations/*.test.js attendance/*.test.js"
+    "test": "node --test chatwoot-dispatcher/*.test.js confirmations/*.test.js attendance/*.test.js attendance-direct/*.test.js"
   },
   "dependencies": {
     "express": "^4.19.2",
     "pg": "^8.11.5"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8"
   }
 }
