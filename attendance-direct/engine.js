@@ -82,7 +82,7 @@ export async function processEvents({pool=getPool(),send=sendMeta,read=readAppoi
         if(r)await db.query('UPDATE attendance_direct.requests SET reply=$2,intent=$3 WHERE id=$1',[r.id,e.text,intent]);
         let reply;
         if((action==='reschedule'||action==='reschedule_continue') && r){
-          const flow=await rescheduleWithMelania(r.snapshot,e.text);
+          const flow=await rescheduleWithMelania({...r.snapshot,trial:r.trial===true},e.text);
           const nextState=flow.status==='completed'?'rescheduled':flow.status==='needs_review'?'human':'rescheduling';
           await db.query('UPDATE attendance_direct.requests SET state=$2,medinet_status=$3 WHERE id=$1',[r.id,nextState,flow.status]);
           if(flow.status==='needs_review') await pause(db,e.phone,'reschedule_needs_review');
