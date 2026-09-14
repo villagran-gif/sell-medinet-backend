@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { getPool } from '../chatwoot-webhook/db.js';
-import { readAppointment, writeAppointment } from '../attendance/clients.js';
+import { readAppointment, writeAppointment, rescheduleWithMelania } from '../attendance/clients.js';
 import { eligible, future, decision } from '../attendance/policy.js';
 import { classifyInbound } from '../confirmations/classifier.js';
 import { sendMeta, template, TRIAL_PHONE, supportText } from './meta.js';
@@ -74,11 +74,18 @@ export async function processEvents({pool=getPool(),send=sendMeta,read=readAppoi
         r=selectRequest(list.rows,e,now);
         const {intent}=await classifyInbound(e.text);
         let action=r?decision(r.state,intent):'human';
+        if(r?.state==='rescheduling') action='reschedule_continue';
         if(r && !r.trial && !future(r.snapshot,now))action='human';
         if(action==='duplicate'){await db.query("UPDATE attendance_direct.events SET state='duplicate_intent' WHERE id=$1",[row.id]);continue;}
         if(r)await db.query('UPDATE attendance_direct.requests SET reply=$2,intent=$3 WHERE id=$1',[r.id,e.text,intent]);
         let reply;
-        if(['human','reschedule'].includes(action)){
+        if((action==='reschedule'||action==='reschedule_continue') && r && !r.trial){
+          const flow=await rescheduleWithMelania(r.snapshot,e.text);
+          const nextState=flow.status==='completed'?'rescheduled':flow.status==='needs_review'?'human':'rescheduling';
+          await db.query('UPDATE attendance_direct.requests SET state=$2,medinet_status=$3 WHERE id=$1',[r.id,nextState,flow.status]);
+          if(flow.status==='needs_review') await pause(db,e.phone,'reschedule_needs_review');
+          reply=flow.reply||'Estoy revisando otras horas con el mismo profesional.';
+        }else if(action==='human'){
           await pause(db,e.phone,action);
           if(r)await db.query("UPDATE attendance_direct.requests SET state='human' WHERE id=$1",[r.id]);
           reply=supportText;
@@ -95,7 +102,7 @@ export async function processEvents({pool=getPool(),send=sendMeta,read=readAppoi
           reply=action==='confirm'?'Tu cita quedó confirmada. ¡Te esperamos!':'Tu cita quedó cancelada.';
         }
         await sendOnce(db,`ack:${e.id}`,e.phone,{type:'text',text:{body:reply}},send);
-        await db.query("UPDATE attendance_direct.events SET state=$2 WHERE id=$1",[row.id,['human','reschedule'].includes(action)?'needs_review':'done']);
+        await db.query("UPDATE attendance_direct.events SET state=$2 WHERE id=$1",[row.id,action==='human'?'needs_review':'done']);
       }catch(error){
         await pause(db,e.phone,'needs_review');
         if(r)await db.query("UPDATE attendance_direct.requests SET error='processing_needs_review' WHERE id=$1",[r.id]);

@@ -9,6 +9,7 @@ export function snapshot(raw) {
   const a = raw?.data || raw;
   const result = { id: Number(a?.id), patientId: Number(a?.paciente?.id),
     patient: fullName(a?.paciente), phone: digits(a?.paciente?.telefono || a?.paciente?.telefono_2),
+    patientRun: String(a?.paciente?.rut || a?.paciente?.run || a?.paciente?.dni || '').trim(), patientEmail: String(a?.paciente?.email || '').trim(),
     professionalId: Number(a?.profesional?.id), professional: fullName(a?.profesional),
     branchId: Number(a?.sucursal?.id), branch: a?.sucursal?.nombre,
     date: String(a?.fecha || '').slice(0,10).replaceAll('/', '-'), time: String(a?.hora || '').slice(0,5),
