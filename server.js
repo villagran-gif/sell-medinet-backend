@@ -7,7 +7,8 @@ import { createConfirmationsRouter } from "./confirmations/index.js";
 import { attendanceRouter } from './attendance/router.js';
 import { tick as attendanceTick, startupTrial } from './attendance/engine.js';
 import { webhookRouter as directWebhook, operatorRouter as directOperator } from './attendance-direct/router.js';
-import { processEvents as directTick } from './attendance-direct/engine.js';
+import { processEvents as directTick, request as directRequest } from './attendance-direct/engine.js';
+import { TRIAL_PHONE } from './attendance-direct/meta.js';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -20,13 +21,21 @@ if (process.env.ATTENDANCE_DIRECT_ENABLED === 'true') {
 app.use(express.json({ limit: "1mb" }));
 if (process.env.ATTENDANCE_DIRECT_ENABLED === 'true') {
   app.use('/attendance-direct', directOperator());
+  const directTestSend = process.env.ATTENDANCE_DIRECT_MODE !== 'live' && process.env.ATTENDANCE_DIRECT_TEST_SEND_ENABLED === 'true';
   let busy = false;
   setInterval(async () => {
-    if (busy || process.env.ATTENDANCE_DIRECT_SEND_ENABLED !== 'true' || process.env.ATTENDANCE_DIRECT_CUTOVER_VERIFIED !== 'true') return;
+    const liveSend = process.env.ATTENDANCE_DIRECT_SEND_ENABLED === 'true' && process.env.ATTENDANCE_DIRECT_CUTOVER_VERIFIED === 'true';
+    if (busy || (!liveSend && !directTestSend)) return;
     busy = true;
     try { await directTick(); } catch { console.error('[attendance-direct] worker unavailable'); }
     finally { busy = false; }
   }, 5000).unref();
+  if (directTestSend && process.env.ATTENDANCE_DIRECT_STARTUP_TRIAL_KEY) {
+    const tomorrow = new Date(Date.now()+86400000).toISOString().slice(0,10);
+    directRequest({phone:TRIAL_PHONE,patient:'Rodrigo',professional:'Profesional de prueba',date:tomorrow,time:'17:30',branch:'Prueba'}, {
+      trial:true,key:process.env.ATTENDANCE_DIRECT_STARTUP_TRIAL_KEY,actor:'startup-trial'
+    }).then(r=>console.log('[attendance-direct/startup-trial]',JSON.stringify(r))).catch(e=>console.error('[attendance-direct/startup-trial]',e.message));
+  }
 }
 
 // ======================
