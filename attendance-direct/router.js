@@ -28,8 +28,11 @@ export function operatorRouter() {
     return {mode:process.env.ATTENDANCE_DIRECT_MODE==='live'?'live':'test',sendsEnabled:testSend||(process.env.ATTENDANCE_DIRECT_SEND_ENABLED==='true'&&process.env.ATTENDANCE_DIRECT_CUTOVER_VERIFIED==='true'),items:result.rows.slice(0,500),truncated:result.rows.length>500,attention:attention.rows};
   }));
   r.post('/trial',route(async req=>{
-    const date=String(req.body?.date||'');if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))||!future({date,time:'17:30'}))throw Error('future_date_required');
-    return request({phone:TRIAL_PHONE,patient:'Rodrigo',professional:'Profesional de prueba',date,time:'17:30',branch:'Prueba'}, {trial:true,key:req.body?.key,actor:req.body?.actor||'operator'});
+    const date=String(req.body?.date||'');const time=String(req.body?.time||'17:30');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)||!Number.isFinite(Date.parse(date))||!future({date,time}))throw Error('future_date_required');
+    const scenario=req.body?.scenario||{};
+    const a={id:Number(scenario.id||990000001),phone:TRIAL_PHONE,patient:String(scenario.patient||'Rodrigo'),professionalId:Number(scenario.professionalId||1),professional:String(scenario.professional||'Profesional de prueba'),branchId:Number(scenario.branchId||1),branch:String(scenario.branch||'Prueba'),type:String(scenario.type||'PRUEBA, sin cita real'),date,time};
+    return request(a,{trial:true,replaceTrial:true,key:req.body?.key,actor:req.body?.actor||'operator'});
   }));
   r.post('/send',route(async req=>{
     const id=req.body?.appointmentId;if(!Number.isSafeInteger(id)||id<1)throw Error('appointment_id_required');

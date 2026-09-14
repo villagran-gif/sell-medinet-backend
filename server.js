@@ -32,9 +32,16 @@ if (process.env.ATTENDANCE_DIRECT_ENABLED === 'true') {
   }, 5000).unref();
   if (directTestSend && process.env.ATTENDANCE_DIRECT_STARTUP_TRIAL_KEY) {
     const tomorrow = new Date(Date.now()+86400000).toISOString().slice(0,10);
-    directRequest({phone:TRIAL_PHONE,patient:'Rodrigo',professional:'Profesional de prueba',date:tomorrow,time:'17:30',branch:'Prueba'}, {
-      trial:true,key:process.env.ATTENDANCE_DIRECT_STARTUP_TRIAL_KEY,actor:'startup-trial'
-    }).then(r=>console.log('[attendance-direct/startup-trial]',JSON.stringify(r))).catch(e=>console.error('[attendance-direct/startup-trial]',e.message));
+    const a={id:Number(process.env.ATTENDANCE_DIRECT_STARTUP_TRIAL_ID||990000001),phone:TRIAL_PHONE,
+      patient:process.env.ATTENDANCE_DIRECT_STARTUP_TRIAL_PATIENT||'Rodrigo',
+      professionalId:Number(process.env.ATTENDANCE_DIRECT_STARTUP_TRIAL_PROFESSIONAL_ID||1),
+      professional:process.env.ATTENDANCE_DIRECT_STARTUP_TRIAL_PROFESSIONAL||'Profesional de prueba',
+      branchId:Number(process.env.ATTENDANCE_DIRECT_STARTUP_TRIAL_BRANCH_ID||1),
+      branch:process.env.ATTENDANCE_DIRECT_STARTUP_TRIAL_BRANCH||'Prueba',
+      type:process.env.ATTENDANCE_DIRECT_STARTUP_TRIAL_TYPE||'PRUEBA, sin cita real',
+      date:process.env.ATTENDANCE_DIRECT_STARTUP_TRIAL_DATE||tomorrow,time:process.env.ATTENDANCE_DIRECT_STARTUP_TRIAL_TIME||'17:30'};
+    directRequest(a,{trial:true,replaceTrial:true,key:process.env.ATTENDANCE_DIRECT_STARTUP_TRIAL_KEY,actor:'startup-trial'})
+      .then(r=>console.log('[attendance-direct/startup-trial]',JSON.stringify(r))).catch(e=>console.error('[attendance-direct/startup-trial]',e.message));
   }
 }
 

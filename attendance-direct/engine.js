@@ -26,7 +26,7 @@ async function sendOnce(db,id,phone,body,send) {
   try {const mid=await send(phone,body);await db.query("UPDATE attendance_direct.outbox SET state='accepted',message_id=$2 WHERE id=$1",[id,mid]);return mid;}
   catch(e){await db.query("UPDATE attendance_direct.outbox SET state='uncertain' WHERE id=$1",[id]);throw e;}
 }
-export async function request(a,{trial=false,key,actor,pool=getPool(),send=sendMeta,read=readAppointment,now=new Date()}={}) {
+export async function request(a,{trial=false,replaceTrial=false,key,actor,pool=getPool(),send=sendMeta,read=readAppointment,now=new Date()}={}) {
   if(!actor || !key || !/^[a-zA-Z0-9_-]{8,100}$/.test(key))throw Error('request_identity_required');
   if(trial && a.phone!==TRIAL_PHONE)throw Error('trial_recipient_only');
   if(!trial && process.env.ATTENDANCE_DIRECT_MODE!=='live')throw Error('direct_test_mode');
@@ -35,6 +35,8 @@ export async function request(a,{trial=false,key,actor,pool=getPool(),send=sendM
     if(prior.rows.length)return {...prior.rows[0],duplicate:true};
     if((await db.query('SELECT paused FROM attendance_direct.control WHERE phone=$1',[a.phone])).rows[0]?.paused)throw Error('human_paused');
     if(!trial){const fresh=await read(a.id);if(!eligible(fresh,now)||fresh.fingerprint!==a.fingerprint)throw Error('appointment_changed');}
+    // A new explicit trial may replace an older trial on the fixed test phone only.
+    if(trial&&replaceTrial)await db.query(`UPDATE attendance_direct.requests SET expires_at=$2 WHERE phone=$1 AND trial=true AND expires_at>$2`,[a.phone,now]);
     // One unresolved request per phone: an unquoted reply must never target the wrong appointment.
     const active=await db.query(`SELECT id FROM attendance_direct.requests WHERE phone=$1 AND (expires_at>$2 OR state IN ('sending','uncertain','processing'))`,[a.phone,now]);
     if(active.rows.length)throw Error('phone_has_current_request');
@@ -79,7 +81,7 @@ export async function processEvents({pool=getPool(),send=sendMeta,read=readAppoi
         if(action==='duplicate'){await db.query("UPDATE attendance_direct.events SET state='duplicate_intent' WHERE id=$1",[row.id]);continue;}
         if(r)await db.query('UPDATE attendance_direct.requests SET reply=$2,intent=$3 WHERE id=$1',[r.id,e.text,intent]);
         let reply;
-        if((action==='reschedule'||action==='reschedule_continue') && r && !r.trial){
+        if((action==='reschedule'||action==='reschedule_continue') && r){
           const flow=await rescheduleWithMelania(r.snapshot,e.text);
           const nextState=flow.status==='completed'?'rescheduled':flow.status==='needs_review'?'human':'rescheduling';
           await db.query('UPDATE attendance_direct.requests SET state=$2,medinet_status=$3 WHERE id=$1',[r.id,nextState,flow.status]);
