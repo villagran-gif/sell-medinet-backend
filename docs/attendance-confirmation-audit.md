@@ -44,3 +44,59 @@ Los nombres heredados `confirmed` y `cancelled` siguen siendo estados locales; n
 | Fallo de escritura | Pruebas de cero filas/excepción: no hay acuse de éxito; no se prueba escritura Medinet |
 
 Pruebas sintéticas del clasificador, constructor de acuse y procesador real con dependencias sustituidas; regresiones del dispatcher. Sin llamadas de IA, mensajes a pacientes, POST a Medinet ni despliegue. La corrección no equivale a restaurar el flujo completo.
+
+## Main WhatsApp preparation — 2026-09-14
+
+User chose the main Clinyco number +56 9 5338 6191 (Chatwoot inbox
+110652). The historical client inherited CHATWOOT_INBOX_ID and trusted
+stored conversation IDs, allowing reminders/acknowledgments in the retired
+inbox 107690. The client now pins the main inbox, verifies its live
+phone_number and Channel::Whatsapp type, and verifies an existing
+conversation's inbox before sending. A failed/missing/mismatched read aborts
+before POST. The inbox label alone is not proof of its sending number.
+
+Live sending additionally requires CONFIRMATIONS_LIVE_SEND_ENABLED=true;
+the default remains dry-run even if CHATWOOT_DRY_RUN=false is inherited.
+No production configuration was changed. Do not enable either live sending
+or the confirmations module yet. This is channel isolation, not completion
+of the attendance flow. It does not merge old conversation history or
+implement existing-thread reuse, appointment/reply correlation, human-pause
+integration, concurrent scheduler claims, or verified Medinet updates.
+Those remain prerequisites before activation, as described above.
+
+Validation: 40 local Node tests pass, including synthetic HTTP checks for
+the main channel, legacy inbox override, wrong/missing phone, wrong channel
+type, old conversation, failed reads, and default no-HTTP dry-run. These
+prove client guards, not WhatsApp delivery or real model behavior. No
+patient was contacted and no appointment state was modified.
+
+API contracts consulted:
+- https://developers.chatwoot.com/api-reference/inboxes/get-an-inbox
+- https://developers.chatwoot.com/api-reference/conversations/conversation-details
+
+## Reply correlation — follow-up in #39
+
+Removed the phone-only earliest-appointment lookup and its 24-hour grace
+period after the appointment. Only explicit Chatwoot in_reply_to references
+are eligible in this first stage, matched to the recorded real outbound
+message, account 162472, inbox 110652, conversation, phone, and appointment
+revision. Multiple matches, legacy sends without context, dry-run sends,
+past appointments and imported inactive/unknown Medinet states do not match.
+An intake change in date, branch, professional, specialty, patient or
+Medinet state increments the revision via migration 003; an old reply cannot
+be applied to that new revision. State transitions also compare the revision
+and require a pending future appointment, so a concurrent state transition
+returns no receipt. Source snapshot freshness is still not a live Medinet check.
+
+A bare unquoted yes is deliberately NOT handled yet: pending-question
+coordination with Antonia must be implemented before enabling this module.
+The existing dispatcher remains unchanged. Human control, outbound concurrency,
+source refresh, and Medinet receipt integration still block activation.
+
+53 local tests pass. New tests use synthetic webhook payloads and mocked DB
+results; they do NOT execute PostgreSQL or prove the SQL migration/trigger.
+Additionally, sql-context-check.mjs passed against isolated PostgreSQL/WASM
+(PGlite): migrations including 003 repeated, exact selection among two appointments,
+wrong conversation, reprogrammed revision, repeated transition, cancelled and past
+appointments. Concurrent multi-connection behavior remains untested. No migration
+was run on production.
