@@ -35,31 +35,25 @@ export async function handoff(id,reason) {
   await cw(`/conversations/${id}/messages`,{content:`Confirmaciones: requiere atención del equipo. Motivo: ${reason}.`,message_type:'outgoing',private:true});
   await cw(`/conversations/${id}/toggle_status`,{status:'open'});
 }
-let jwt; let expires=0;
-async function auth() {
-  if(jwt&&expires>Date.now())return `MEDINET_JWT ${jwt}`;
-  const username=process.env.MEDINET_USER||process.env.MEDINET_JWT_USERNAME;
-  const password=process.env.MEDINET_USER_KEY||process.env.MEDINET_JWT_PASSWORD;
-  if(username&&password){
-    const r=await fetch('https://clinyco.medinetapp.com/token-login/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password}),signal:timeout()});
-    if(!r.ok)throw new Error('medinet_auth_failed');const j=await r.json();if(!j.token)throw new Error('medinet_token_missing');
-    jwt=j.token;expires=Date.now()+3600000;return `MEDINET_JWT ${jwt}`;
-  }
-  if(process.env.MEDINET_API_TOKEN)return `Token ${process.env.MEDINET_API_TOKEN}`;
-  throw new Error('medinet_credentials_missing');
+async function attendanceMedinetProxy(intent, appointmentId, {env=process.env,fetchImpl=fetch}={}) {
+  const base=String(env.CLINYCO_AI_BASE_URL||'').replace(/\/+$/,'');
+  const token=env.CLINYCO_AI_HANDOFF_TOKEN;
+  if(!base||!token)throw new Error('melania_attendance_config_missing');
+  const r=await fetchImpl(`${base}/melania/appointment-direct`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+    body:JSON.stringify({appointmentId:Number(appointmentId),intent}),signal:AbortSignal.timeout(20000)});
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok||data.success!==true||!data.appointment)throw new Error(`melania_attendance_${r.status}_${data.error||'failed'}`);
+  return data.appointment;
 }
-async function medinet(path, body) {
-  const r=await fetch(`https://clinyco.medinetapp.com/api-public/schedule/appointment/${path}`,{
-    method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',Authorization:await auth()},body:body===undefined?undefined:JSON.stringify(body),signal:timeout()});
-  if(!r.ok)throw new Error(`medinet_http_${r.status}`);return r.json();
+export async function readAppointment(id) {
+  return snapshot(await attendanceMedinetProxy('read',id));
 }
-export const readAppointment = async id => snapshot(await medinet(`${id}/`));
 export async function writeAppointment(id,intent) {
   if(process.env.ATTENDANCE_MEDINET_WRITE_ENABLED!=='true')throw new Error('medinet_write_disabled');
   if(!['confirm','cancel'].includes(intent))throw new Error('unsupported_action');
-  await medinet(`update-appointment-state/${id}/`,{action:intent==='confirm'?'Confirm':'Cancel',observation:'Respuesta de asistencia recibida por WhatsApp Clinyco.'});
-  return readAppointment(id);
+  return snapshot(await attendanceMedinetProxy(intent,id));
 }
+export { attendanceMedinetProxy };
 
 export async function ensureLabel() {
   const data=await cw('/labels');const labels=Array.isArray(data)?data:data.payload;
