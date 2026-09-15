@@ -83,8 +83,46 @@ export async function sendReconciledCompletion(externalId,{pool=getPool(),send=s
   });
 }
 
+
+export function externalStateForMedinetStatus(value) {
+  const status=String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+  if(['cancelada','cancelado','re-agendado','reagendado','anulada','anulado'].includes(status)) return 'external_cancelled';
+  if(status==='confirmado') return 'external_confirmed';
+  if(['atendido','en sala de espera'].includes(status)) return 'external_closed';
+  return null;
+}
+
+export async function reconcilePendingAgainstSnapshots(pool=getPool()) {
+  await ensure(pool);
+  let rows;
+  try {
+    ({rows}=await pool.query(`WITH latest AS (
+      SELECT DISTINCT ON (day) day,appointments FROM medinet_daily_snapshots ORDER BY day,synced_at DESC
+    ), current AS (
+      SELECT (a->>'id')::bigint appointment_id,a->'estado'->>'nombre' medinet_status
+      FROM latest,lateral jsonb_array_elements(appointments) a
+      WHERE (a->>'id') ~ '^[0-9]+$'
+    )
+    SELECT r.id,c.medinet_status
+    FROM attendance_direct.requests r JOIN current c ON (r.snapshot->>'id')::bigint=c.appointment_id
+    WHERE r.trial=false AND r.state='pending' AND (r.snapshot->>'id') ~ '^[0-9]+$'`));
+  } catch(error) {
+    if(error?.code==='42P01') return [];
+    throw error;
+  }
+  const reconciled=[];
+  for(const row of rows){
+    const state=externalStateForMedinetStatus(row.medinet_status);if(!state)continue;
+    const updated=await pool.query(`UPDATE attendance_direct.requests SET state=$2,medinet_status=$3,verified_at=now(),expires_at=now()
+      WHERE id=$1 AND state='pending' RETURNING id,state,medinet_status`,[row.id,state,row.medinet_status]);
+    if(updated.rows[0])reconciled.push(updated.rows[0]);
+  }
+  return reconciled;
+}
+
 export async function processEvents({pool=getPool(),send=sendMeta,read=readAppointment,write=writeAppointment,now=new Date()}={}) {
   return lock(pool,async db=>{
+    await reconcilePendingAgainstSnapshots(pool);
     // Crash after claim: no replay of uncertain external effects.
     const interrupted=await db.query("UPDATE attendance_direct.events SET state='needs_review' WHERE state='processing' RETURNING phone");
     for(const row of interrupted.rows)await pause(db,row.phone,'interrupted_processing');

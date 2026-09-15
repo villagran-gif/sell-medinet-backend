@@ -25,7 +25,10 @@ export function operatorRouter() {
     const result=await getPool().query(`SELECT id,snapshot->>'patient' AS patient,snapshot->>'professional' AS professional,snapshot->>'branch' AS branch,snapshot->>'date' AS date,snapshot->>'time' AS time,phone,trial,state,delivery,reply,intent,medinet_status,verified_at,error FROM attendance_direct.requests WHERE snapshot->>'date'=$1 ORDER BY snapshot->>'time',id LIMIT 501`,[date]);
     const attention=await getPool().query(`SELECT phone,state,payload->>'text' AS reply,created_at FROM attendance_direct.events WHERE state IN ('needs_review','human_paused') AND (created_at AT TIME ZONE 'America/Santiago')::date=$1::date ORDER BY created_at DESC LIMIT 100`,[date]);
     const testSend=process.env.ATTENDANCE_DIRECT_MODE!=='live'&&process.env.ATTENDANCE_DIRECT_TEST_SEND_ENABLED==='true';
-    return {mode:process.env.ATTENDANCE_DIRECT_MODE==='live'?'live':'test',sendsEnabled:testSend||(process.env.ATTENDANCE_DIRECT_SEND_ENABLED==='true'&&process.env.ATTENDANCE_DIRECT_CUTOVER_VERIFIED==='true'),items:result.rows.slice(0,500),truncated:result.rows.length>500,attention:attention.rows};
+    const directVerified=process.env.ATTENDANCE_DIRECT_CUTOVER_VERIFIED==='true';
+    const bridgeVerified=process.env.ATTENDANCE_DIRECT_CHATWOOT_BRIDGE_ENABLED==='true'&&process.env.ATTENDANCE_DIRECT_CHATWOOT_BRIDGE_VERIFIED==='true';
+    const liveSend=process.env.ATTENDANCE_DIRECT_SEND_ENABLED==='true'&&(directVerified||bridgeVerified);
+    return {mode:process.env.ATTENDANCE_DIRECT_MODE==='live'?'live':'test',sendsEnabled:testSend||liveSend,inboundMode:directVerified?'meta_direct':bridgeVerified?'chatwoot_bridge':'unverified',items:result.rows.slice(0,500),truncated:result.rows.length>500,attention:attention.rows};
   }));
   r.post('/completion',route(async req=>sendReconciledCompletion(req.body?.externalId)));
   r.post('/trial',route(async req=>{
