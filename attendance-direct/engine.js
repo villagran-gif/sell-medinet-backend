@@ -3,7 +3,7 @@ import { getPool } from '../chatwoot-webhook/db.js';
 import { readAppointment, writeAppointment, rescheduleWithMelania } from '../attendance/clients.js';
 import { eligible, future, decision } from '../attendance/policy.js';
 import { classifyInbound } from '../confirmations/classifier.js';
-import { sendMeta, template, TRIAL_PHONE, supportText } from './meta.js';
+import { sendMeta, template, rescheduleList, TRIAL_PHONE, supportText } from './meta.js';
 const ready=new WeakMap();
 export async function ensure(pool=getPool()) {
   if(!ready.has(pool)) ready.set(pool,readFile(new URL('./schema.sql',import.meta.url),'utf8').then(sql=>pool.query(sql)).catch(e=>{ready.delete(pool);throw e;}));
@@ -107,13 +107,19 @@ export async function processEvents({pool=getPool(),send=sendMeta,read=readAppoi
         if(r && !r.trial && !future(r.snapshot,now))action='human';
         if(action==='duplicate'){await db.query("UPDATE attendance_direct.events SET state='duplicate_intent' WHERE id=$1",[row.id]);continue;}
         if(r)await db.query('UPDATE attendance_direct.requests SET reply=$2,intent=$3 WHERE id=$1',[r.id,e.text,intent]);
-        let reply;
+        let reply,replyBody;
         if((action==='reschedule'||action==='reschedule_continue') && r){
-          const flow=await rescheduleWithMelania({...r.snapshot,trial:r.trial===true},e.text);
+          const selectionPrefix=`rs:${r.snapshot.id}:`;
+          const selected=String(e.selectionId||'').startsWith(selectionPrefix)?String(e.selectionId).slice(selectionPrefix.length):'';
+          const inboundText=/^\d+$/.test(selected)?selected:selected==='none'?'Ninguna':e.text;
+          const flow=await rescheduleWithMelania({...r.snapshot,trial:r.trial===true},inboundText);
           const nextState=flow.status==='completed'?'rescheduled':flow.status==='needs_review'?'human':'rescheduling';
           await db.query('UPDATE attendance_direct.requests SET state=$2,medinet_status=$3 WHERE id=$1',[r.id,nextState,flow.status]);
           if(flow.status==='needs_review') await pause(db,e.phone,'reschedule_needs_review');
           reply=flow.reply||'Estoy revisando otras horas con el mismo profesional.';
+          if(flow.status==='choosing'&&Array.isArray(flow.slots)&&flow.slots.length){
+            replyBody=rescheduleList(r.snapshot.id,flow.slots,r.snapshot.professional,r.snapshot.branch);
+          }
         }else if(action==='human'){
           await pause(db,e.phone,action);
           if(r)await db.query("UPDATE attendance_direct.requests SET state='human' WHERE id=$1",[r.id]);
@@ -130,7 +136,7 @@ export async function processEvents({pool=getPool(),send=sendMeta,read=readAppoi
           await db.query('UPDATE attendance_direct.requests SET state=$2,medinet_status=$3,verified_at=now() WHERE id=$1',[r.id,action,receipt.status]);
           reply=action==='confirm'?'Tu cita quedó confirmada. ¡Te esperamos!':'Tu cita quedó cancelada.';
         }
-        await sendOnce(db,`ack:${e.id}`,e.phone,{type:'text',text:{body:reply}},send);
+        await sendOnce(db,`ack:${e.id}`,e.phone,replyBody||{type:'text',text:{body:reply}},send);
         await db.query("UPDATE attendance_direct.events SET state=$2 WHERE id=$1",[row.id,action==='human'?'needs_review':'done']);
       }catch(error){
         await pause(db,e.phone,'needs_review');

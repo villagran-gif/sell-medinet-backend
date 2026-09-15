@@ -14,7 +14,8 @@ export function parseWebhook(body) {
     if(change.field!=='messages'||v?.metadata?.phone_number_id!==PHONE_ID) continue;
     for(const m of v.messages || []) if(m.id && /^569\d{8}$/.test(m.from)) events.push({
       id:m.id,phone:m.from,kind:'message',at:Number(m.timestamp)*1000,
-      text:String(m.text?.body||m.button?.text||m.interactive?.button_reply?.title||m.interactive?.list_reply?.title||'').slice(0,4000),replyTo:m.context?.id||null
+      text:String(m.text?.body||m.button?.text||m.interactive?.button_reply?.title||m.interactive?.list_reply?.title||'').slice(0,4000),
+      selectionId:String(m.interactive?.list_reply?.id||m.interactive?.button_reply?.id||''),replyTo:m.context?.id||null
     });
     for(const s of v.statuses || []) if(s.id && s.recipient_id) events.push({
       id:`status:${s.id}:${s.status}:${s.timestamp}`,messageId:s.id,phone:s.recipient_id,
@@ -50,4 +51,19 @@ export function template(a,trial) {
   const values=[trial?'Rodrigo (PRUEBA)':a.patient.split(' ')[0],trial?'PRUEBA, sin cita real':a.type||'consulta',a.professional,a.date.split('-').reverse().join('/'),a.time];
   return {type:'template',template:{name:'cly_confirm_appointment_v1',language:{code:'es_CL'},components:[{type:'body',parameters:values.map(text=>({type:'text',text}))}]}};
 }
+
+export function rescheduleList(externalId, slots, professional='', branch='') {
+  const id=Number(externalId);if(!Number.isSafeInteger(id)||id<1)throw Error('invalid_reschedule_list_id');
+  const rows=(Array.isArray(slots)?slots:[]).slice(0,9).map((s,index)=>{
+    const rawDate=String(s.date||s.dataDia||'').trim();
+    const date=/^\d{4}-\d{2}-\d{2}$/.test(rawDate)?rawDate.split('-').reverse().join('/'):rawDate;
+    const time=String(s.time||'').slice(0,5);
+    if(!date||!/^\d{2}:\d{2}$/.test(time))throw Error('invalid_reschedule_slot');
+    return {id:`rs:${id}:${index+1}`,title:`${date} · ${time}`.slice(0,24),description:`${professional}${branch?` · ${branch}`:''}`.slice(0,72)};
+  });
+  if(!rows.length)throw Error('reschedule_list_empty');
+  rows.push({id:`rs:${id}:none`,title:'Ninguna',description:'Ninguna de estas opciones me sirve'});
+  return {type:'interactive',interactive:{type:'list',body:{text:'Selecciona la hora que prefieres.'},action:{button:'Ver fechas',sections:[{title:'Horas disponibles',rows}]}}};
+}
+
 export const supportText = `Para ayudarte con tu cita, escribe al equipo aquí: ${SUPPORT}`;
