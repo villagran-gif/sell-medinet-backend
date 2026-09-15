@@ -145,6 +145,24 @@ async function sameDaySiblings(pool,r,now) {
   return out.sort((a,b)=>a.time.localeCompare(b.time));
 }
 
+export async function sendPendingTwoHourFollowups({pool=getPool(),send=sendMeta,now=new Date()}={}) {
+  await reconcilePendingAgainstSnapshots(pool);
+  return lock(pool,async db=>{
+    const {rows}=await db.query(`SELECT * FROM attendance_direct.requests
+      WHERE trial=false AND state='pending' AND coalesce(reply,'')=''
+        AND created_at <= $1::timestamptz - interval '2 hours' AND expires_at>$1
+      ORDER BY created_at,id LIMIT 100`,[now]);
+    const summary={eligible:0,sent:0,duplicate:0,failed:0};
+    for(const r of rows){
+      if(!future(r.snapshot,now))continue;
+      summary.eligible++;
+      try{const mid=await sendOnce(db,`followup2h:${r.id}`,r.phone,template(r.snapshot,false),send);if(mid)summary.sent++;else summary.duplicate++;}
+      catch(e){summary.failed++;console.error('[attendance-direct/followup-2h]',r.id,e.message);}
+    }
+    return summary;
+  });
+}
+
 export async function processEvents({pool=getPool(),send=sendMeta,read=readAppointment,write=writeAppointment,now=new Date()}={}) {
   return lock(pool,async db=>{
     await reconcilePendingAgainstSnapshots(pool);

@@ -18,3 +18,6 @@ CREATE TABLE IF NOT EXISTS attendance_direct.outbox (
 CREATE TABLE IF NOT EXISTS attendance_direct.control (
  phone text PRIMARY KEY, paused boolean NOT NULL DEFAULT false, reason text, updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE attendance_direct.requests ADD COLUMN IF NOT EXISTS chatwoot_conversation_id bigint;
+ALTER TABLE attendance_direct.requests ADD COLUMN IF NOT EXISTS chatwoot_context_noted_at timestamptz;
