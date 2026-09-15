@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHmac} from 'node:crypto';
 import {validSignature,parseWebhook,PHONE_ID,sendMeta,template,rescheduleList,rescheduleDateList,rescheduleTimeList,TRIAL_PHONE} from './meta.js';
-import {selectRequest,sendReconciledCompletion,externalStateForMedinetStatus} from './engine.js';
+import {selectRequest,sendReconciledCompletion,externalStateForMedinetStatus,multiAppointmentPrompt} from './engine.js';
 test('HMAC requires exact raw bytes and secret',()=>{
   const raw=Buffer.from('{"object":"whatsapp_business_account"}');const sig='sha256='+createHmac('sha256','synthetic').update(raw).digest('hex');
   assert.equal(validSignature(raw,sig,'synthetic'),true);assert.equal(validSignature(Buffer.from('{}'),sig,'synthetic'),false);assert.equal(validSignature(raw,sig,''),false);assert.equal(validSignature(raw,'sha256=bad','synthetic'),false);
@@ -96,4 +96,9 @@ test('external Medinet state closes stale pending confirmations',()=>{
  assert.equal(externalStateForMedinetStatus('Confirmado'),null);
  assert.equal(externalStateForMedinetStatus('En Sala de Espera'),'external_closed');
  assert.equal(externalStateForMedinetStatus('Agendado'),null);
+});
+
+test('multi appointment prompt lists both visits before any combined confirmation',()=>{
+ const text=multiAppointmentPrompt([{time:'11:40',type:'Psicología',professional:'Peggy'},{time:'10:30',type:'Nutriología',professional:'Katherinne'}]);
+ assert.match(text,/1\. 10:30/);assert.match(text,/2\. 11:40/);assert.match(text,/¿Confirmas ambas/);
 });
