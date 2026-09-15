@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { getPool } from '../chatwoot-webhook/db.js';
 import { readAppointment, writeAppointment, rescheduleWithMelania } from '../attendance/clients.js';
-import { eligible, future, decision } from '../attendance/policy.js';
+import { eligible, future, decision, snapshot as normalizeAppointment, norm } from '../attendance/policy.js';
 import { classifyInbound } from '../confirmations/classifier.js';
 import { sendMeta, template, rescheduleList, rescheduleDateList, rescheduleTimeList, TRIAL_PHONE, supportText } from './meta.js';
 import { locationDetails } from './location.js';
@@ -123,6 +123,28 @@ export async function reconcilePendingAgainstSnapshots(pool=getPool()) {
   return reconciled;
 }
 
+
+export function multiAppointmentPrompt(items=[]) {
+  const rows=[...items].sort((a,b)=>String(a.time).localeCompare(String(b.time))).map((a,i)=>`${i+1}. ${a.time} · ${a.type||'Consulta'} · ${a.professional}`);
+  return `Veo que tienes ${rows.length} citas hoy:\n${rows.join('\n')}\n\n¿Confirmas ambas? Responde SÍ para confirmar todas. Si necesitas cancelar o reagendar una, responde NO o REAGENDAR y te preguntaré cuál.`;
+}
+async function sameDaySiblings(pool,r,now) {
+  let rows;
+  try { ({rows}=await pool.query(`SELECT appointments FROM medinet_daily_snapshots WHERE day=$1::date ORDER BY synced_at DESC LIMIT 1`,[r.snapshot.date])); }
+  catch(error){ if(error?.code==='42P01') return []; throw error; }
+  const raw=rows?.[0]?.appointments;if(!Array.isArray(raw))return [];
+  const baseRun=norm(r.snapshot.patientRun||''),baseName=norm(r.snapshot.patient||'');
+  const out=[];
+  for(const item of raw){
+    try{
+      const a=normalizeAppointment(item);
+      const samePatient=(baseRun&&norm(a.patientRun||'')===baseRun)||(!baseRun&&norm(a.patient||'')===baseName);
+      if(a.id!==Number(r.snapshot.id)&&a.phone===r.phone&&a.date===r.snapshot.date&&samePatient&&eligible(a,now))out.push(a);
+    }catch{}
+  }
+  return out.sort((a,b)=>a.time.localeCompare(b.time));
+}
+
 export async function processEvents({pool=getPool(),send=sendMeta,read=readAppointment,write=writeAppointment,now=new Date()}={}) {
   return lock(pool,async db=>{
     await reconcilePendingAgainstSnapshots(pool);
@@ -149,11 +171,42 @@ export async function processEvents({pool=getPool(),send=sendMeta,read=readAppoi
         const {intent}=await classifyInbound(e.text);
         let action=r?decision(r.state,intent):'human';
         if(r?.state==='rescheduling') action='reschedule_continue';
+        if(r?.state==='multi_choice') action=intent==='confirm'?'multi_confirm':intent==='cancel'?'multi_cancel':intent==='reschedule'?'multi_reschedule':'human';
         if(r && !r.trial && !future(r.snapshot,now))action='human';
         if(action==='duplicate'){await db.query("UPDATE attendance_direct.events SET state='duplicate_intent' WHERE id=$1",[row.id]);continue;}
         if(r)await db.query('UPDATE attendance_direct.requests SET reply=$2,intent=$3 WHERE id=$1',[r.id,e.text,intent]);
         let reply,replyBody;
-        if((action==='reschedule'||action==='reschedule_continue') && r){
+        if(r && !r.trial && r.state==='pending' && ['confirm','cancel','reschedule'].includes(action)){
+          const siblings=await sameDaySiblings(pool,r,now);
+          if(siblings.length){
+            const group=[r.snapshot,...siblings].sort((a,b)=>a.time.localeCompare(b.time));
+            const grouped={...r.snapshot,multiAppointments:group};
+            await db.query("UPDATE attendance_direct.requests SET state='multi_choice',snapshot=$2 WHERE id=$1",[r.id,JSON.stringify(grouped)]);
+            reply=multiAppointmentPrompt(group);
+            await sendOnce(db,`ack:${e.id}`,e.phone,{type:'text',text:{body:reply}},send);
+            await db.query("UPDATE attendance_direct.events SET state='done' WHERE id=$1",[row.id]);
+            continue;
+          }
+        }
+        if(action==='multi_confirm' && r){
+          const group=Array.isArray(r.snapshot.multiAppointments)?r.snapshot.multiAppointments:[];
+          if(group.length<2)throw Error('multi_appointments_missing');
+          const fresh=[];
+          for(const a of group){const f=await read(a.id);if(f.fingerprint!==a.fingerprint||!eligible(f,now))throw Error('appointment_changed');fresh.push(f);}
+          const receipts=[];
+          for(const f of fresh){const receipt=f.status==='confirmado'?f:await write(f.id,'confirm');if(receipt.fingerprint!==f.fingerprint||receipt.status!=='confirmado')throw Error('medinet_unverified');receipts.push(receipt);}
+          await db.query('UPDATE attendance_direct.requests SET state=$2,medinet_status=$3,verified_at=now(),expires_at=now() WHERE id=$1',[r.id,'confirm','confirmado']);
+          for(let i=1;i<group.length;i++)await db.query(`INSERT INTO attendance_direct.requests(request_key,snapshot,phone,trial,state,delivery,reply,intent,medinet_status,verified_at,expires_at,actor)
+            VALUES($1,$2,$3,false,'confirm',$4,$5,'confirm','confirmado',now(),now(),'multi-confirm') ON CONFLICT(request_key) DO NOTHING`,[`multi-${r.id}-${group[i].id}`,JSON.stringify(group[i]),r.phone,r.delivery||'accepted',e.text]);
+          reply=`Listo. Quedaron confirmadas tus ${group.length} citas de hoy:
+${group.map(a=>`• ${a.time} · ${a.type||'Consulta'} · ${a.professional}`).join('\n')}`;
+        }else if((action==='multi_cancel'||action==='multi_reschedule') && r){
+          const group=Array.isArray(r.snapshot.multiAppointments)?r.snapshot.multiAppointments:[];
+          await db.query("UPDATE attendance_direct.requests SET state=$2 WHERE id=$1",[r.id,action==='multi_cancel'?'multi_cancel_choice':'multi_reschedule_choice']);
+          reply=`¿Cuál cita quieres ${action==='multi_cancel'?'cancelar':'reagendar'}?
+${group.map((a,i)=>`${i+1}. ${a.time} · ${a.type||'Consulta'} · ${a.professional}`).join('\n')}
+Responde con el número.`;
+        }else if((action==='reschedule'||action==='reschedule_continue') && r){
           const selection=String(e.selectionId||'');let inboundText=e.text;
           const slotPrefix=`rs:${r.snapshot.id}:`,datePrefix=`rsd:${r.snapshot.id}:`,timePrefix=`rst:${r.snapshot.id}:`;
           if(selection.startsWith(slotPrefix)){const selected=selection.slice(slotPrefix.length);inboundText=/^\d+$/.test(selected)?selected:selected==='none'?'Ninguna':e.text;}
