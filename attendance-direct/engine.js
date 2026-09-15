@@ -4,6 +4,7 @@ import { readAppointment, writeAppointment, rescheduleWithMelania } from '../att
 import { eligible, future, decision } from '../attendance/policy.js';
 import { classifyInbound } from '../confirmations/classifier.js';
 import { sendMeta, template, rescheduleList, rescheduleDateList, rescheduleTimeList, TRIAL_PHONE, supportText } from './meta.js';
+import { locationDetails } from './location.js';
 const ready=new WeakMap();
 export async function ensure(pool=getPool()) {
   if(!ready.has(pool)) ready.set(pool,readFile(new URL('./schema.sql',import.meta.url),'utf8').then(sql=>pool.query(sql)).catch(e=>{ready.delete(pool);throw e;}));
@@ -73,7 +74,8 @@ export async function sendReconciledCompletion(externalId,{pool=getPool(),send=s
     const professional=String(snapshot.professional||'').trim();
     const branch=String(snapshot.branch||'').trim();
     if(!/^\d{2}\/\d{2}\/\d{4}$/.test(date)||!/^\d{2}:\d{2}$/.test(time)||!professional||!branch)throw Error('completion_context_invalid');
-    const body={type:'text',text:{body:`Listo. Tu cita quedó reagendada con ${professional} para el ${date} a las ${time} en ${branch}.`}};
+    const location=locationDetails(snapshot).text;
+    const body={type:'text',text:{body:`Listo. Tu cita quedó reagendada con ${professional} para el ${date} a las ${time} en ${branch}.${location?`\n\n${location}`:''}`}};
     const outboxId=`reconcile-complete:${r.id}:${m.new_appointment_id}`;
     const mid=await sendOnce(db,outboxId,r.phone,body,send);
     const state=(await db.query('SELECT state,message_id FROM attendance_direct.outbox WHERE id=$1',[outboxId])).rows[0];
@@ -142,7 +144,7 @@ export async function processEvents({pool=getPool(),send=sendMeta,read=readAppoi
           const receipt=await write(r.snapshot.id,action);
           if(receipt.fingerprint!==r.snapshot.fingerprint||!(action==='confirm'?['confirmado']:['cancelada','cancelado']).includes(receipt.status))throw Error('medinet_unverified');
           await db.query('UPDATE attendance_direct.requests SET state=$2,medinet_status=$3,verified_at=now() WHERE id=$1',[r.id,action,receipt.status]);
-          reply=action==='confirm'?'Tu cita quedó confirmada. ¡Te esperamos!':'Tu cita quedó cancelada.';
+          reply=action==='confirm'?`Tu cita quedó confirmada. ¡Te esperamos!${locationDetails(r.snapshot).text?`\n\n${locationDetails(r.snapshot).text}`:''}`:'Tu cita quedó cancelada.';
         }
         await sendOnce(db,`ack:${e.id}`,e.phone,replyBody||{type:'text',text:{body:reply}},send);
         await db.query("UPDATE attendance_direct.events SET state=$2 WHERE id=$1",[row.id,action==='human'?'needs_review':'done']);
