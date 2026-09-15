@@ -52,6 +52,33 @@ export async function ingest(events,pool=getPool()) {
     await db.query('COMMIT');
   }catch(e){await db.query('ROLLBACK');throw e;}finally{db.release();}
 }
+export async function sendReconciledCompletion(externalId,{pool=getPool(),send=sendMeta}={}) {
+  const id=Number(externalId);
+  if(!Number.isSafeInteger(id)||id<1)throw Error('external_id_required');
+  return lock(pool,async db=>{
+    const req=await db.query(`SELECT id,phone,snapshot,state,medinet_status,verified_at FROM attendance_direct.requests
+      WHERE snapshot->>'id'=$1 AND state='rescheduled' AND medinet_status='completed'
+      ORDER BY verified_at DESC NULLS LAST,id DESC LIMIT 2`,[String(id)]);
+    if(req.rows.length!==1)throw Error(req.rows.length?'completed_request_ambiguous':'completed_request_required');
+    const r=req.rows[0];
+    const ses=await db.query(`SELECT phone,state,chosen,new_appointment_id,original_appointment_id FROM melania_reschedule_sessions WHERE external_id=$1`,[id]);
+    const m=ses.rows[0];
+    if(!m||m.state!=='completed'||!m.chosen||!m.new_appointment_id||!m.original_appointment_id)throw Error('completed_session_required');
+    if(String(m.phone)!==String(r.phone))throw Error('completion_phone_mismatch');
+    const chosen=m.chosen||{},snapshot=r.snapshot||{};
+    const date=String(chosen.date||'').trim() || String(chosen.dataDia||'').split('-').reverse().join('/');
+    const time=String(chosen.time||'').slice(0,5);
+    const professional=String(snapshot.professional||'').trim();
+    const branch=String(snapshot.branch||'').trim();
+    if(!/^\d{2}\/\d{2}\/\d{4}$/.test(date)||!/^\d{2}:\d{2}$/.test(time)||!professional||!branch)throw Error('completion_context_invalid');
+    const body={type:'text',text:{body:`Listo. Tu cita quedó reagendada con ${professional} para el ${date} a las ${time} en ${branch}.`}};
+    const outboxId=`reconcile-complete:${r.id}:${m.new_appointment_id}`;
+    const mid=await sendOnce(db,outboxId,r.phone,body,send);
+    const state=(await db.query('SELECT state,message_id FROM attendance_direct.outbox WHERE id=$1',[outboxId])).rows[0];
+    return {sent:state?.state==='accepted',duplicate:mid===null,state:state?.state||null,messageId:state?.message_id||null,requestId:r.id,newAppointmentId:Number(m.new_appointment_id)};
+  });
+}
+
 export async function processEvents({pool=getPool(),send=sendMeta,read=readAppointment,write=writeAppointment,now=new Date()}={}) {
   return lock(pool,async db=>{
     // Crash after claim: no replay of uncertain external effects.

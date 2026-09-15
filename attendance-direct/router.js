@@ -1,6 +1,6 @@
 import { Router, raw } from 'express';
 import { validSignature, parseWebhook, TRIAL_PHONE, metaConfig } from './meta.js';
-import { ingest, ensure, request } from './engine.js';
+import { ingest, ensure, request, sendReconciledCompletion } from './engine.js';
 import { getPool } from '../chatwoot-webhook/db.js';
 import { requireBearer } from '../confirmations/lib/auth.js';
 import { readAppointment } from '../attendance/clients.js';
@@ -27,6 +27,7 @@ export function operatorRouter() {
     const testSend=process.env.ATTENDANCE_DIRECT_MODE!=='live'&&process.env.ATTENDANCE_DIRECT_TEST_SEND_ENABLED==='true';
     return {mode:process.env.ATTENDANCE_DIRECT_MODE==='live'?'live':'test',sendsEnabled:testSend||(process.env.ATTENDANCE_DIRECT_SEND_ENABLED==='true'&&process.env.ATTENDANCE_DIRECT_CUTOVER_VERIFIED==='true'),items:result.rows.slice(0,500),truncated:result.rows.length>500,attention:attention.rows};
   }));
+  r.post('/completion',route(async req=>sendReconciledCompletion(req.body?.externalId)));
   r.post('/trial',route(async req=>{
     const date=String(req.body?.date||'');const time=String(req.body?.time||'17:30');
     if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)||!Number.isFinite(Date.parse(date))||!future({date,time}))throw Error('future_date_required');
