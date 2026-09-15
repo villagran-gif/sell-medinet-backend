@@ -87,13 +87,16 @@ export async function sendReconciledCompletion(externalId,{pool=getPool(),send=s
 export function externalStateForMedinetStatus(value) {
   const status=String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
   if(['cancelada','cancelado','re-agendado','reagendado','anulada','anulado'].includes(status)) return 'external_cancelled';
-  if(status==='confirmado') return 'external_confirmed';
   if(['atendido','en sala de espera'].includes(status)) return 'external_closed';
   return null;
 }
 
 export async function reconcilePendingAgainstSnapshots(pool=getPool()) {
   await ensure(pool);
+  // Undo the short-lived incorrect reconciliation rule that treated Medinet confirmation as WhatsApp confirmation.
+  // Do not resend: only reopen the existing request so the patient's WhatsApp reply can still be captured.
+  await pool.query(`UPDATE attendance_direct.requests SET state='pending',verified_at=NULL,expires_at=GREATEST(expires_at,now()+interval '2 days')
+    WHERE trial=false AND state='external_confirmed' AND coalesce(reply,'')='' AND intent IS NULL`);
   let rows;
   try {
     ({rows}=await pool.query(`WITH latest AS (

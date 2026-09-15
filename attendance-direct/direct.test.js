@@ -93,7 +93,7 @@ test('location details include physical address and map, but telemedicine has no
 
 test('external Medinet state closes stale pending confirmations',()=>{
  assert.equal(externalStateForMedinetStatus('Cancelada'),'external_cancelled');
- assert.equal(externalStateForMedinetStatus('Confirmado'),'external_confirmed');
+ assert.equal(externalStateForMedinetStatus('Confirmado'),null);
  assert.equal(externalStateForMedinetStatus('En Sala de Espera'),'external_closed');
  assert.equal(externalStateForMedinetStatus('Agendado'),null);
 });
