@@ -13,6 +13,13 @@ test('strict appointment identity and status/fingerprint separation',()=>{
  assert.equal(eligible(snapshot({...raw,paciente:{...raw.paciente,nombres:'Paciente Prueba'}}),now),false);
  assert.equal(eligible(snapshot({...raw,fecha:'2026-09-13'}),now),false);
 });
+
+test('Medinet snapshots may omit numeric patient/professional ids but retain stable identity',()=>{
+ const medinet={...raw,paciente:{nombres:'Paciente',paterno:'Real',telefono:'+56911111111',run:'19.395.918-0'},profesional:{nombres:'Doctor',paterno:'Prueba',run:'13.580.388-k'}};
+ const a=snapshot(medinet);assert.equal(a.patientId,null);assert.equal(a.professionalId,null);assert.equal(a.professionalRun,'13.580.388-k');assert.equal(eligible(a,now),true);
+ assert.equal(snapshot({...medinet,estado:{nombre:'Confirmado'}}).fingerprint,a.fingerprint);
+ assert.notEqual(snapshot({...medinet,profesional:{...medinet.profesional,run:'15.020.022-9'}}).fingerprint,a.fingerprint);
+});
 test('dedicated route activates only on exact account and inbox',()=>{
  const p={account:{id:162472},conversation:{id:399,inbox_id:107690}};
  assert.deepEqual(resolveHandlerKeys(p,parseRoutingConfig({})),['antonia']);

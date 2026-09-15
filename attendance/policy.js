@@ -7,18 +7,22 @@ export const norm = x => String(x || '').normalize('NFD').replace(/[\u0300-\u036
 const fullName = p => [p?.nombres, p?.paterno, p?.materno].filter(Boolean).join(' ');
 export function snapshot(raw) {
   const a = raw?.data || raw;
-  const result = { id: Number(a?.id), patientId: Number(a?.paciente?.id),
+  const patientIdRaw=Number(a?.paciente?.id), professionalIdRaw=Number(a?.profesional?.id);
+  const result = { id: Number(a?.id), patientId: Number.isSafeInteger(patientIdRaw)&&patientIdRaw>0?patientIdRaw:null,
     patient: fullName(a?.paciente), phone: digits(a?.paciente?.telefono || a?.paciente?.telefono_2),
     patientRun: String(a?.paciente?.rut || a?.paciente?.run || a?.paciente?.dni || '').trim(), patientEmail: String(a?.paciente?.email || '').trim(),
-    professionalId: Number(a?.profesional?.id), professional: fullName(a?.profesional),
+    professionalId: Number.isSafeInteger(professionalIdRaw)&&professionalIdRaw>0?professionalIdRaw:null, professional: fullName(a?.profesional),
+    professionalRun: String(a?.profesional?.rut || a?.profesional?.run || '').trim(),
     branchId: Number(a?.sucursal?.id), branch: a?.sucursal?.nombre,
     date: String(a?.fecha || '').slice(0,10).replaceAll('/', '-'), time: String(a?.hora || '').slice(0,5),
     type: typeof a?.tipo === 'string' ? a.tipo : '', status: norm(a?.estado?.nombre) };
-  if (![result.id,result.patientId,result.professionalId,result.branchId].every(x=>Number.isSafeInteger(x)&&x>0)
+  const patientKey=result.patientId?`id:${result.patientId}`:result.patientRun?`run:${norm(result.patientRun)}`:`contact:${norm(result.patient)}|${result.phone}`;
+  const professionalKey=result.professionalId?`id:${result.professionalId}`:result.professionalRun?`run:${norm(result.professionalRun)}`:`name:${norm(result.professional)}`;
+  if (![result.id,result.branchId].every(x=>Number.isSafeInteger(x)&&x>0)
     || !/^569\d{8}$/.test(result.phone) || !/^\d{4}-\d{2}-\d{2}$/.test(result.date)
-    || !/^([01]\d|2[0-3]):[0-5]\d$/.test(result.time) || !result.patient || !result.professional)
+    || !/^([01]\d|2[0-3]):[0-5]\d$/.test(result.time) || !result.patient || !result.professional || !patientKey || !professionalKey)
     throw new Error('appointment_identity_incomplete');
-  result.fingerprint = createHash('sha256').update(JSON.stringify([result.id,result.patientId,result.phone,result.professionalId,result.branchId,result.date,result.time,result.type])).digest('hex');
+  result.fingerprint = createHash('sha256').update(JSON.stringify([result.id,patientKey,result.phone,professionalKey,result.branchId,result.date,result.time,result.type])).digest('hex');
   return result;
 }
 export function future(a, now = new Date()) {
