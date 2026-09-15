@@ -34,7 +34,8 @@ export function metaConfig(env=process.env) {
 export async function sendMeta(phone, body, {env=process.env, fetchImpl=fetch}={}) {
   const testOverride=env.ATTENDANCE_DIRECT_MODE!=='live' && phone===TRIAL_PHONE && env.ATTENDANCE_DIRECT_TEST_SEND_ENABLED==='true';
   if(env.ATTENDANCE_DIRECT_SEND_ENABLED!=='true' && !testOverride) throw Error('direct_send_disabled');
-  if(env.ATTENDANCE_DIRECT_CUTOVER_VERIFIED!=='true' && !testOverride) throw Error('direct_cutover_not_verified');
+  const inboundVerified=env.ATTENDANCE_DIRECT_CUTOVER_VERIFIED==='true' || (env.ATTENDANCE_DIRECT_CHATWOOT_BRIDGE_ENABLED==='true' && env.ATTENDANCE_DIRECT_CHATWOOT_BRIDGE_VERIFIED==='true');
+  if(!inboundVerified && !testOverride) throw Error('direct_inbound_not_verified');
   if(!/^569\d{8}$/.test(phone)) throw Error('invalid_phone');
   if(env.ATTENDANCE_DIRECT_MODE!=='live' && phone!==TRIAL_PHONE) throw Error('trial_recipient_only');
   const {token,version}=metaConfig(env);

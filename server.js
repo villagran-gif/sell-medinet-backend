@@ -9,6 +9,8 @@ import { tick as attendanceTick, startupTrial } from './attendance/engine.js';
 import { webhookRouter as directWebhook, operatorRouter as directOperator } from './attendance-direct/router.js';
 import { processEvents as directTick, request as directRequest } from './attendance-direct/engine.js';
 import { TRIAL_PHONE } from './attendance-direct/meta.js';
+import { readAppointment as readAttendanceAppointment } from './attendance/clients.js';
+import { eligible as attendanceEligible } from './attendance/policy.js';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -24,12 +26,32 @@ if (process.env.ATTENDANCE_DIRECT_ENABLED === 'true') {
   const directTestSend = process.env.ATTENDANCE_DIRECT_MODE !== 'live' && process.env.ATTENDANCE_DIRECT_TEST_SEND_ENABLED === 'true';
   let busy = false;
   setInterval(async () => {
-    const liveSend = process.env.ATTENDANCE_DIRECT_SEND_ENABLED === 'true' && process.env.ATTENDANCE_DIRECT_CUTOVER_VERIFIED === 'true';
+    const inboundVerified = process.env.ATTENDANCE_DIRECT_CUTOVER_VERIFIED === 'true' || (process.env.ATTENDANCE_DIRECT_CHATWOOT_BRIDGE_ENABLED === 'true' && process.env.ATTENDANCE_DIRECT_CHATWOOT_BRIDGE_VERIFIED === 'true');
+    const liveSend = process.env.ATTENDANCE_DIRECT_SEND_ENABLED === 'true' && inboundVerified;
     if (busy || (!liveSend && !directTestSend)) return;
     busy = true;
     try { await directTick(); } catch { console.error('[attendance-direct] worker unavailable'); }
     finally { busy = false; }
   }, 5000).unref();
+  if (process.env.ATTENDANCE_DIRECT_MODE === 'live' && process.env.ATTENDANCE_DIRECT_STARTUP_LIVE_BATCH_COMMIT === 'true') {
+    const batchKey=String(process.env.ATTENDANCE_DIRECT_STARTUP_LIVE_BATCH_KEY||'').trim();
+    const ids=[...new Set(String(process.env.ATTENDANCE_DIRECT_STARTUP_LIVE_BATCH_IDS||'').split(',').map(x=>Number(x.trim())).filter(x=>Number.isSafeInteger(x)&&x>0))].slice(0,20);
+    if(!/^[a-zA-Z0-9_-]{8,50}$/.test(batchKey)||!ids.length) console.error('[attendance-direct/startup-live-batch] invalid_config');
+    else (async()=>{
+      const summary={sent:0,duplicate:0,skipped:0,review:0};
+      for(const id of ids){
+        try{
+          const a=await readAttendanceAppointment(id);
+          if(!attendanceEligible(a)){summary.skipped++;console.log('[attendance-direct/startup-live-batch]',JSON.stringify({id,status:'ineligible'}));continue;}
+          const result=await directRequest(a,{trial:false,key:`${batchKey}-${id}-${a.fingerprint.slice(0,12)}`,actor:'startup-live-batch'});
+          if(result?.duplicate)summary.duplicate++;else summary.sent++;
+          console.log('[attendance-direct/startup-live-batch]',JSON.stringify({id,state:result?.state||null,delivery:result?.delivery||null,duplicate:!!result?.duplicate}));
+        }catch(e){summary.review++;console.error('[attendance-direct/startup-live-batch]',id,e.message);}
+      }
+      console.log('[attendance-direct/startup-live-batch-summary]',JSON.stringify(summary));
+    })();
+  }
+
   if (directTestSend && process.env.ATTENDANCE_DIRECT_STARTUP_TRIAL_KEY) {
     const tomorrow = new Date(Date.now()+86400000).toISOString().slice(0,10);
     const a={id:Number(process.env.ATTENDANCE_DIRECT_STARTUP_TRIAL_ID||990000001),phone:TRIAL_PHONE,

@@ -33,11 +33,11 @@ test('unquoted reply cannot choose between appointments, quoted sender must matc
  assert.equal(selectRequest([a],{...e,replyTo:'unknown'},now),null);
  assert.equal(selectRequest([a],{...e,at:Date.parse('2026-09-13')},now),null);
 });
-test('direct Meta send locked until cutover and trial restricted',async()=>{
+test('direct Meta send locked until verified inbound and trial restricted',async()=>{
  let calls=0;const fetchImpl=async()=>{calls++;return {ok:true,json:async()=>({messages:[{id:'wamid.test'}]})};};
  const env={ATTENDANCE_DIRECT_SEND_ENABLED:'true',ATTENDANCE_META_TOKEN:'synthetic',ATTENDANCE_META_VERSION:'v23.0'};
- await assert.rejects(sendMeta(TRIAL_PHONE,{}, {env,fetchImpl}),/cutover/);
- env.ATTENDANCE_DIRECT_CUTOVER_VERIFIED='true';await assert.rejects(sendMeta('56911111111',{}, {env,fetchImpl}),/trial_recipient/);assert.equal(calls,0);
+ await assert.rejects(sendMeta(TRIAL_PHONE,{}, {env,fetchImpl}),/inbound/);
+ env.ATTENDANCE_DIRECT_CHATWOOT_BRIDGE_ENABLED='true';env.ATTENDANCE_DIRECT_CHATWOOT_BRIDGE_VERIFIED='true';await assert.rejects(sendMeta('56911111111',{}, {env,fetchImpl}),/trial_recipient/);assert.equal(calls,0);
  assert.equal(await sendMeta(TRIAL_PHONE,{}, {env,fetchImpl}),'wamid.test');assert.equal(calls,1);
 });
 test('provider error never counts as sent',async()=>{
