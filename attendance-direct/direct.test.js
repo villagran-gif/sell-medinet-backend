@@ -82,3 +82,11 @@ test('date and time lists support touch-only rescheduling',()=>{
  assert.equal(trows[0].id,'rst:990000052:1100');assert.equal(trows[0].title,'11:00');
  assert.equal(trows.at(-1).id,'rst:990000052:other');assert.equal(trows.at(-1).title,'Otra fecha');
 });
+
+test('location details include physical address and map, but telemedicine has no street',async()=>{
+ const {locationDetails}=await import('./location.js');
+ const physical=locationDetails({branchId:39,branch:'Antofagasta Mall Arauco Express',type:'Evaluación Cirugía - Nuevo'});
+ assert.equal(physical.kind,'physical');assert.match(physical.text,/Edmundo Pérez Zujovic 5440/);assert.match(physical.text,/google\.com\/maps/);
+ const tele=locationDetails({branchId:39,branch:'Antofagasta Mall Arauco Express',type:'Consulta Telemedicina 30'});
+ assert.equal(tele.kind,'telemedicine');assert.doesNotMatch(tele.text,/Edmundo|Apoquindo|Granaderos/);
+});
