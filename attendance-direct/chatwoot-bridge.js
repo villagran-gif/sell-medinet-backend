@@ -35,7 +35,7 @@ export async function backfillChatwootContexts({pool=getPool(),date}={}) {
   const {rows}=await pool.query(`SELECT r.id,r.snapshot,r.chatwoot_context_noted_at,
     (SELECT NULLIF(e.payload->'conversation'->>'id','')::bigint FROM chatwoot.raw_events e
       WHERE e.event_type='message_created'
-        AND regexp_replace(coalesce(e.payload->'sender'->>'phone_number',''),'\D','','g')=r.phone
+        AND regexp_replace(coalesce(e.payload->'sender'->>'phone_number',''),'\\D','','g')=r.phone
         AND e.received_at>=r.created_at
       ORDER BY e.received_at ASC LIMIT 1) conversation_id
     FROM attendance_direct.requests r

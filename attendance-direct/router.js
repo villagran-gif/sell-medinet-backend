@@ -27,7 +27,7 @@ export function operatorRouter() {
     const result=await getPool().query(`SELECT r.id,r.snapshot->>'patient' AS patient,r.snapshot->>'professional' AS professional,r.snapshot->>'branch' AS branch,r.snapshot->>'date' AS date,r.snapshot->>'time' AS time,r.phone,r.trial,r.state,r.delivery,r.reply,r.intent,r.medinet_status,r.verified_at,r.error,r.chatwoot_conversation_id,
       COALESCE(r.chatwoot_conversation_id,(SELECT NULLIF(e.payload->'conversation'->>'id','')::bigint FROM chatwoot.raw_events e
        WHERE e.event_type='message_created'
-         AND regexp_replace(coalesce(e.payload->'sender'->>'phone_number',''),'\D','','g')=r.phone
+         AND regexp_replace(coalesce(e.payload->'sender'->>'phone_number',''),'\\D','','g')=r.phone
          AND (e.received_at AT TIME ZONE 'America/Santiago')::date=$1::date
        ORDER BY e.received_at DESC LIMIT 1)) AS chatwoot_conversation_id
       FROM attendance_direct.requests r WHERE r.snapshot->>'date'=$1 ORDER BY r.snapshot->>'time',r.id LIMIT 501`,[date]);
