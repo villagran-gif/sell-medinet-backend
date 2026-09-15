@@ -5,6 +5,7 @@ import { getPool } from '../chatwoot-webhook/db.js';
 import { requireBearer } from '../confirmations/lib/auth.js';
 import { readAppointment } from '../attendance/clients.js';
 import { eligible, future } from '../attendance/policy.js';
+import { backfillChatwootContexts } from './chatwoot-bridge.js';
 export function webhookRouter({pool=getPool,env=process.env}={}) {
   const r=Router();
   r.get('/',(req,res)=>{
@@ -22,6 +23,7 @@ export function operatorRouter() {
   const route=fn=>async(req,res)=>{try{await ensure();res.json(await fn(req));}catch(e){res.status(409).json({error:e.message});}};
   r.get('/review',route(async req=>{
     const date=String(req.query.date||'');if(!/^\d{4}-\d{2}-\d{2}$/.test(date))throw Error('date_required');
+    await backfillChatwootContexts({date}).catch(e=>console.error('[attendance-direct/chatwoot-backfill-review]',e.message));
     const result=await getPool().query(`SELECT r.id,r.snapshot->>'patient' AS patient,r.snapshot->>'professional' AS professional,r.snapshot->>'branch' AS branch,r.snapshot->>'date' AS date,r.snapshot->>'time' AS time,r.phone,r.trial,r.state,r.delivery,r.reply,r.intent,r.medinet_status,r.verified_at,r.error,r.chatwoot_conversation_id,
       COALESCE(r.chatwoot_conversation_id,(SELECT NULLIF(e.payload->'conversation'->>'id','')::bigint FROM chatwoot.raw_events e
        WHERE e.event_type='message_created'
