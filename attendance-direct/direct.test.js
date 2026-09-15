@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {createHmac} from 'node:crypto';
 import {validSignature,parseWebhook,PHONE_ID,sendMeta,template,rescheduleList,rescheduleDateList,rescheduleTimeList,TRIAL_PHONE} from './meta.js';
 import {selectRequest,sendReconciledCompletion,externalStateForMedinetStatus,multiAppointmentPrompt} from './engine.js';
+import {conversationText} from './router.js';
 test('HMAC requires exact raw bytes and secret',()=>{
   const raw=Buffer.from('{"object":"whatsapp_business_account"}');const sig='sha256='+createHmac('sha256','synthetic').update(raw).digest('hex');
   assert.equal(validSignature(raw,sig,'synthetic'),true);assert.equal(validSignature(Buffer.from('{}'),sig,'synthetic'),false);assert.equal(validSignature(raw,sig,''),false);assert.equal(validSignature(raw,'sha256=bad','synthetic'),false);
@@ -101,4 +102,11 @@ test('external Medinet state closes stale pending confirmations',()=>{
 test('multi appointment prompt lists both visits before any combined confirmation',()=>{
  const text=multiAppointmentPrompt([{time:'11:40',type:'Psicología',professional:'Peggy'},{time:'10:30',type:'Nutriología',professional:'Katherinne'}]);
  assert.match(text,/1\. 10:30/);assert.match(text,/2\. 11:40/);assert.match(text,/¿Confirmas ambas/);
+});
+
+test('conversation viewer renders templates and interactive lists as readable text',()=>{
+ const t=template({patient:'Camila Alcayaga',type:'Bio impedanciometria',professional:'Examen Bio Impedandiometria',date:'2026-09-15',time:'12:15'},false);
+ assert.match(conversationText(t),/Camila/);assert.match(conversationText(t),/12:15/);
+ const l=rescheduleTimeList(99,[{time:'11:00'},{time:'12:20'}],'Profesional','Sede');
+ assert.match(conversationText(l),/Elige una hora/);assert.match(conversationText(l),/11:00/);assert.match(conversationText(l),/Otra fecha/);
 });
