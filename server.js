@@ -35,7 +35,8 @@ if (process.env.ATTENDANCE_DIRECT_ENABLED === 'true') {
     finally { busy = false; }
   }, 5000).unref();
   if (process.env.ATTENDANCE_DIRECT_MODE === 'live') {
-    setTimeout(()=>backfillChatwootContexts().then(r=>{if(r.annotated)console.log('[attendance-direct/chatwoot-backfill]',JSON.stringify(r));}).catch(e=>console.error('[attendance-direct/chatwoot-backfill]',e.message)),20000).unref();
+    const chileParts=()=>Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).map(p=>[p.type,p.value]));
+    setTimeout(()=>{const p=chileParts(),date=`${p.year}-${p.month}-${p.day}`;backfillChatwootContexts({date}).then(r=>console.log('[attendance-direct/chatwoot-backfill]',JSON.stringify(r))).catch(e=>console.error('[attendance-direct/chatwoot-backfill]',e.message));},20000).unref();
   }
   if (process.env.ATTENDANCE_DIRECT_2H_FOLLOWUP_ENABLED === 'true') {
     let followupBusy=false;
