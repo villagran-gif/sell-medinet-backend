@@ -66,4 +66,26 @@ export function rescheduleList(externalId, slots, professional='', branch='') {
   return {type:'interactive',interactive:{type:'list',body:{text:'Selecciona la hora que prefieres.'},action:{button:'Ver fechas',sections:[{title:'Horas disponibles',rows}]}}};
 }
 
+export function rescheduleDateList(externalId, dates, professional='', branch='') {
+  const id=Number(externalId);if(!Number.isSafeInteger(id)||id<1)throw Error('invalid_reschedule_list_id');
+  const rows=(Array.isArray(dates)?dates:[]).slice(0,10).map(d=>{
+    const iso=String(d.dataDia||'').trim(),date=String(d.date||'').trim()||(/^\d{4}-\d{2}-\d{2}$/.test(iso)?iso.split('-').reverse().join('/'):'');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(iso)||!/^\d{2}\/\d{2}\/\d{4}$/.test(date))throw Error('invalid_reschedule_date');
+    return {id:`rsd:${id}:${iso}`,title:date,description:`${professional}${branch?` · ${branch}`:''}`.slice(0,72)};
+  });
+  if(!rows.length)throw Error('reschedule_date_list_empty');
+  return {type:'interactive',interactive:{type:'list',body:{text:'Elige una fecha.'},action:{button:'Ver fechas',sections:[{title:'Fechas disponibles',rows}]}}};
+}
+
+export function rescheduleTimeList(externalId, slots, professional='', branch='') {
+  const id=Number(externalId);if(!Number.isSafeInteger(id)||id<1)throw Error('invalid_reschedule_list_id');
+  const rows=(Array.isArray(slots)?slots:[]).slice(0,9).map(s=>{
+    const time=String(s.time||'').slice(0,5);if(!/^\d{2}:\d{2}$/.test(time))throw Error('invalid_reschedule_time');
+    return {id:`rst:${id}:${time.replace(':','')}`,title:time,description:`${professional}${branch?` · ${branch}`:''}`.slice(0,72)};
+  });
+  if(!rows.length)throw Error('reschedule_time_list_empty');
+  rows.push({id:`rst:${id}:other`,title:'Otra fecha',description:'Ver otras fechas disponibles'});
+  return {type:'interactive',interactive:{type:'list',body:{text:'Elige una hora.'},action:{button:'Ver horas',sections:[{title:'Horas disponibles',rows}]}}};
+}
+
 export const supportText = `Para ayudarte con tu cita, escribe al equipo aquí: ${SUPPORT}`;
