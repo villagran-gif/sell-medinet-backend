@@ -7,8 +7,9 @@ import { createConfirmationsRouter } from "./confirmations/index.js";
 import { attendanceRouter } from './attendance/router.js';
 import { tick as attendanceTick, startupTrial } from './attendance/engine.js';
 import { webhookRouter as directWebhook, operatorRouter as directOperator } from './attendance-direct/router.js';
-import { processEvents as directTick, request as directRequest } from './attendance-direct/engine.js';
+import { processEvents as directTick, request as directRequest, sendPendingTwoHourFollowups } from './attendance-direct/engine.js';
 import { TRIAL_PHONE } from './attendance-direct/meta.js';
+import { backfillChatwootContexts } from './attendance-direct/chatwoot-bridge.js';
 import { readAppointment as readAttendanceAppointment } from './attendance/clients.js';
 import { eligible as attendanceEligible } from './attendance/policy.js';
 const app = express();
@@ -33,6 +34,15 @@ if (process.env.ATTENDANCE_DIRECT_ENABLED === 'true') {
     try { await directTick(); } catch { console.error('[attendance-direct] worker unavailable'); }
     finally { busy = false; }
   }, 5000).unref();
+  if (process.env.ATTENDANCE_DIRECT_MODE === 'live') {
+    setTimeout(()=>backfillChatwootContexts().then(r=>{if(r.annotated)console.log('[attendance-direct/chatwoot-backfill]',JSON.stringify(r));}).catch(e=>console.error('[attendance-direct/chatwoot-backfill]',e.message)),20000).unref();
+  }
+  if (process.env.ATTENDANCE_DIRECT_2H_FOLLOWUP_ENABLED === 'true') {
+    let followupBusy=false;
+    const runFollowups=async()=>{if(followupBusy)return;followupBusy=true;try{const r=await sendPendingTwoHourFollowups();if(r.sent||r.failed)console.log('[attendance-direct/followup-2h-summary]',JSON.stringify(r));}catch(e){console.error('[attendance-direct/followup-2h]',e.message);}finally{followupBusy=false;}};
+    setTimeout(runFollowups,15000).unref();
+    setInterval(runFollowups,5*60*1000).unref();
+  }
   if (process.env.ATTENDANCE_DIRECT_MODE === 'live' && process.env.ATTENDANCE_DIRECT_STARTUP_LIVE_BATCH_COMMIT === 'true') {
     const batchKey=String(process.env.ATTENDANCE_DIRECT_STARTUP_LIVE_BATCH_KEY||'').trim();
     const ids=[...new Set(String(process.env.ATTENDANCE_DIRECT_STARTUP_LIVE_BATCH_IDS||'').split(',').map(x=>Number(x.trim())).filter(x=>Number.isSafeInteger(x)&&x>0))].slice(0,20);
