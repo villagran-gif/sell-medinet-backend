@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHmac} from 'node:crypto';
 import {validSignature,parseWebhook,PHONE_ID,sendMeta,template,rescheduleList,rescheduleDateList,rescheduleTimeList,TRIAL_PHONE} from './meta.js';
-import {selectRequest,sendReconciledCompletion} from './engine.js';
+import {selectRequest,sendReconciledCompletion,externalStateForMedinetStatus} from './engine.js';
 test('HMAC requires exact raw bytes and secret',()=>{
   const raw=Buffer.from('{"object":"whatsapp_business_account"}');const sig='sha256='+createHmac('sha256','synthetic').update(raw).digest('hex');
   assert.equal(validSignature(raw,sig,'synthetic'),true);assert.equal(validSignature(Buffer.from('{}'),sig,'synthetic'),false);assert.equal(validSignature(raw,sig,''),false);assert.equal(validSignature(raw,'sha256=bad','synthetic'),false);
@@ -89,4 +89,11 @@ test('location details include physical address and map, but telemedicine has no
  assert.equal(physical.kind,'physical');assert.match(physical.text,/Edmundo Pérez Zujovic 5440/);assert.match(physical.text,/google\.com\/maps/);
  const tele=locationDetails({branchId:39,branch:'Antofagasta Mall Arauco Express',type:'Consulta Telemedicina 30'});
  assert.equal(tele.kind,'telemedicine');assert.doesNotMatch(tele.text,/Edmundo|Apoquindo|Granaderos/);
+});
+
+test('external Medinet state closes stale pending confirmations',()=>{
+ assert.equal(externalStateForMedinetStatus('Cancelada'),'external_cancelled');
+ assert.equal(externalStateForMedinetStatus('Confirmado'),'external_confirmed');
+ assert.equal(externalStateForMedinetStatus('En Sala de Espera'),'external_closed');
+ assert.equal(externalStateForMedinetStatus('Agendado'),null);
 });
