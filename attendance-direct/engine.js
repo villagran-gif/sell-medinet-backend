@@ -143,7 +143,7 @@ export async function processEvents({pool=getPool(),send=sendMeta,read=readAppoi
           await db.query("UPDATE attendance_direct.requests SET state='uncertain' WHERE id=$1",[r.id]);
           const receipt=await write(r.snapshot.id,action);
           if(receipt.fingerprint!==r.snapshot.fingerprint||!(action==='confirm'?['confirmado']:['cancelada','cancelado']).includes(receipt.status))throw Error('medinet_unverified');
-          await db.query('UPDATE attendance_direct.requests SET state=$2,medinet_status=$3,verified_at=now() WHERE id=$1',[r.id,action,receipt.status]);
+          await db.query('UPDATE attendance_direct.requests SET state=$2,medinet_status=$3,verified_at=now(),expires_at=now() WHERE id=$1',[r.id,action,receipt.status]);
           reply=action==='confirm'?`Tu cita quedó confirmada. ¡Te esperamos!${locationDetails(r.snapshot).text?`\n\n${locationDetails(r.snapshot).text}`:''}`:'Tu cita quedó cancelada.';
         }
         await sendOnce(db,`ack:${e.id}`,e.phone,replyBody||{type:'text',text:{body:reply}},send);

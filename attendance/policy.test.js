@@ -4,6 +4,11 @@ import {snapshot,eligible,parseEvent,selectRequest,decision,acknowledgment} from
 import {parseRoutingConfig,resolveHandlerKeys} from '../chatwoot-dispatcher/routing.js';
 const now=new Date('2026-09-14T14:00:00Z');
 const raw={id:10,paciente:{id:12,nombres:'Paciente',paterno:'Real',telefono:'+56911111111'},profesional:{id:3,nombres:'Doctor',paterno:'Prueba'},sucursal:{id:39,nombre:'Antofagasta'},fecha:'2026-09-15',hora:'12:40',tipo:'Telemedicina',estado:{nombre:'Agendado'}};
+test('snapshot prefers a valid Chilean mobile from secondary phone',()=>{
+ const a=snapshot({...raw,paciente:{...raw.paciente,telefono:'+56 9 9994 934_',telefono_2:'+56 9 9994 4934'}});
+ assert.equal(a.phone,'56999944934');
+});
+
 test('strict appointment identity and status/fingerprint separation',()=>{
  const a=snapshot(raw);assert.equal(eligible(a,now),true);
  assert.equal(snapshot({...raw,estado:{nombre:'Confirmado'}}).fingerprint,a.fingerprint);

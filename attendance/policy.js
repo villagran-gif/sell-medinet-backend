@@ -5,11 +5,15 @@ export const PHONE = '56962718765';
 export const digits = x => String(x || '').replace(/\D/g, '');
 export const norm = x => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 const fullName = p => [p?.nombres, p?.paterno, p?.materno].filter(Boolean).join(' ');
+const mobile = p => {
+  const candidates=[p?.telefono,p?.telefono_2,p?.fono].map(digits).filter(Boolean);
+  return candidates.find(x=>/^569\d{8}$/.test(x)) || candidates[0] || '';
+};
 export function snapshot(raw) {
   const a = raw?.data || raw;
   const patientIdRaw=Number(a?.paciente?.id), professionalIdRaw=Number(a?.profesional?.id);
   const result = { id: Number(a?.id), patientId: Number.isSafeInteger(patientIdRaw)&&patientIdRaw>0?patientIdRaw:null,
-    patient: fullName(a?.paciente), phone: digits(a?.paciente?.telefono || a?.paciente?.telefono_2),
+    patient: fullName(a?.paciente), phone: mobile(a?.paciente),
     patientRun: String(a?.paciente?.rut || a?.paciente?.run || a?.paciente?.dni || '').trim(), patientEmail: String(a?.paciente?.email || '').trim(),
     professionalId: Number.isSafeInteger(professionalIdRaw)&&professionalIdRaw>0?professionalIdRaw:null, professional: fullName(a?.profesional),
     professionalRun: String(a?.profesional?.rut || a?.profesional?.run || '').trim(),
