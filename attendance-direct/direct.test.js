@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHmac} from 'node:crypto';
-import {validSignature,parseWebhook,PHONE_ID,sendMeta,template,TRIAL_PHONE} from './meta.js';
+import {validSignature,parseWebhook,PHONE_ID,sendMeta,template,rescheduleList,TRIAL_PHONE} from './meta.js';
 import {selectRequest,sendReconciledCompletion} from './engine.js';
 test('HMAC requires exact raw bytes and secret',()=>{
   const raw=Buffer.from('{"object":"whatsapp_business_account"}');const sig='sha256='+createHmac('sha256','synthetic').update(raw).digest('hex');
@@ -10,9 +10,21 @@ test('HMAC requires exact raw bytes and secret',()=>{
 test('dedicated phone only, records Meta text IDs and quoted replies',()=>{
   const value={metadata:{phone_number_id:PHONE_ID},messages:[{id:'wamid.synthetic',from:TRIAL_PHONE,timestamp:'1800000000',text:{body:'sí'},context:{id:'wamid.out'}}]};
   const body={object:'whatsapp_business_account',entry:[{changes:[{field:'messages',value}]}]};
-  assert.deepEqual(parseWebhook(body)[0],{id:'wamid.synthetic',phone:TRIAL_PHONE,kind:'message',at:1800000000000,text:'sí',replyTo:'wamid.out'});
+  assert.deepEqual(parseWebhook(body)[0],{id:'wamid.synthetic',phone:TRIAL_PHONE,kind:'message',at:1800000000000,text:'sí',selectionId:'',replyTo:'wamid.out'});
   value.metadata.phone_number_id='another-phone';assert.deepEqual(parseWebhook(body),[]);
 });
+
+test('Meta interactive list keeps the internal row id and visible title',()=>{
+ const value={metadata:{phone_number_id:PHONE_ID},messages:[{id:'wamid.list',from:TRIAL_PHONE,timestamp:'1800000001',interactive:{list_reply:{id:'rs:990000001:2',title:'21/09/2026 · 10:00'}}}]};
+ const event=parseWebhook({object:'whatsapp_business_account',entry:[{changes:[{field:'messages',value}]}]})[0];
+ assert.equal(event.text,'21/09/2026 · 10:00');assert.equal(event.selectionId,'rs:990000001:2');
+});
+test('reschedule list builds native WhatsApp rows plus Ninguna',()=>{
+ const body=rescheduleList(990000001,[{date:'17/09/2026',time:'11:00'},{dataDia:'2026-09-21',time:'10:00'}],'Rodrigo Villagran Morales','Antofagasta Mall Arauco Express');
+ assert.equal(body.type,'interactive');assert.equal(body.interactive.type,'list');assert.equal(body.interactive.action.button,'Ver fechas');
+ const rows=body.interactive.action.sections[0].rows;assert.equal(rows.length,3);assert.equal(rows[0].id,'rs:990000001:1');assert.equal(rows[1].id,'rs:990000001:2');assert.equal(rows[2].id,'rs:990000001:none');assert.equal(rows[2].title,'Ninguna');
+});
+
 test('unquoted reply cannot choose between appointments, quoted sender must match',()=>{
  const now=new Date('2026-09-14T13:00:00Z');const a={phone:TRIAL_PHONE,created_at:'2026-09-14T12:00:00Z',expires_at:'2026-09-15T12:00:00Z',message_id:'one'};
  const e={phone:TRIAL_PHONE,at:now.valueOf(),replyTo:null};
