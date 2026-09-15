@@ -3,7 +3,7 @@ import { getPool } from '../chatwoot-webhook/db.js';
 import { readAppointment, writeAppointment, rescheduleWithMelania } from '../attendance/clients.js';
 import { eligible, future, decision } from '../attendance/policy.js';
 import { classifyInbound } from '../confirmations/classifier.js';
-import { sendMeta, template, rescheduleList, TRIAL_PHONE, supportText } from './meta.js';
+import { sendMeta, template, rescheduleList, rescheduleDateList, rescheduleTimeList, TRIAL_PHONE, supportText } from './meta.js';
 const ready=new WeakMap();
 export async function ensure(pool=getPool()) {
   if(!ready.has(pool)) ready.set(pool,readFile(new URL('./schema.sql',import.meta.url),'utf8').then(sql=>pool.query(sql)).catch(e=>{ready.delete(pool);throw e;}));
@@ -111,15 +111,21 @@ export async function processEvents({pool=getPool(),send=sendMeta,read=readAppoi
         if(r)await db.query('UPDATE attendance_direct.requests SET reply=$2,intent=$3 WHERE id=$1',[r.id,e.text,intent]);
         let reply,replyBody;
         if((action==='reschedule'||action==='reschedule_continue') && r){
-          const selectionPrefix=`rs:${r.snapshot.id}:`;
-          const selected=String(e.selectionId||'').startsWith(selectionPrefix)?String(e.selectionId).slice(selectionPrefix.length):'';
-          const inboundText=/^\d+$/.test(selected)?selected:selected==='none'?'Ninguna':e.text;
+          const selection=String(e.selectionId||'');let inboundText=e.text;
+          const slotPrefix=`rs:${r.snapshot.id}:`,datePrefix=`rsd:${r.snapshot.id}:`,timePrefix=`rst:${r.snapshot.id}:`;
+          if(selection.startsWith(slotPrefix)){const selected=selection.slice(slotPrefix.length);inboundText=/^\d+$/.test(selected)?selected:selected==='none'?'Ninguna':e.text;}
+          else if(selection.startsWith(datePrefix)){const selected=selection.slice(datePrefix.length);inboundText=selected;}
+          else if(selection.startsWith(timePrefix)){const selected=selection.slice(timePrefix.length);inboundText=selected==='other'?'Otra fecha':/^\d{4}$/.test(selected)?`${selected.slice(0,2)}:${selected.slice(2)}`:e.text;}
           const flow=await rescheduleWithMelania({...r.snapshot,trial:r.trial===true},inboundText);
           const nextState=flow.status==='completed'?'rescheduled':flow.status==='needs_review'?'human':'rescheduling';
           await db.query('UPDATE attendance_direct.requests SET state=$2,medinet_status=$3 WHERE id=$1',[r.id,nextState,flow.status]);
           if(flow.status==='needs_review') await pause(db,e.phone,'reschedule_needs_review');
           reply=flow.reply||'Estoy revisando otras horas con el mismo profesional.';
-          if(flow.status==='choosing'&&Array.isArray(flow.slots)&&flow.slots.length){
+          if(flow.status==='choosing'&&flow.choiceKind==='date'&&Array.isArray(flow.dates)&&flow.dates.length){
+            replyBody=rescheduleDateList(r.snapshot.id,flow.dates,r.snapshot.professional,r.snapshot.branch);
+          }else if(flow.status==='choosing'&&flow.choiceKind==='time'&&Array.isArray(flow.slots)&&flow.slots.length){
+            replyBody=rescheduleTimeList(r.snapshot.id,flow.slots,r.snapshot.professional,r.snapshot.branch);
+          }else if(flow.status==='choosing'&&Array.isArray(flow.slots)&&flow.slots.length){
             replyBody=rescheduleList(r.snapshot.id,flow.slots,r.snapshot.professional,r.snapshot.branch);
           }
         }else if(action==='human'){

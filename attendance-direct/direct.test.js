@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHmac} from 'node:crypto';
-import {validSignature,parseWebhook,PHONE_ID,sendMeta,template,rescheduleList,TRIAL_PHONE} from './meta.js';
+import {validSignature,parseWebhook,PHONE_ID,sendMeta,template,rescheduleList,rescheduleDateList,rescheduleTimeList,TRIAL_PHONE} from './meta.js';
 import {selectRequest,sendReconciledCompletion} from './engine.js';
 test('HMAC requires exact raw bytes and secret',()=>{
   const raw=Buffer.from('{"object":"whatsapp_business_account"}');const sig='sha256='+createHmac('sha256','synthetic').update(raw).digest('hex');
@@ -68,4 +68,17 @@ test('reconciled completion is verified from DB and sent once',async()=>{
  assert.equal(first.sent,true);assert.equal(first.duplicate,false);assert.equal(sends,1);
  const second=await sendReconciledCompletion(990000001,{pool,send});
  assert.equal(second.sent,true);assert.equal(second.duplicate,true);assert.equal(sends,1);
+});
+
+
+test('date and time lists support touch-only rescheduling',()=>{
+ const dates=rescheduleDateList(990000052,[{dataDia:'2026-09-17',date:'17/09/2026'},{dataDia:'2026-09-21',date:'21/09/2026'}],'Rodrigo Villagran Morales','Antofagasta Mall Arauco Express');
+ assert.equal(dates.interactive.action.button,'Ver fechas');
+ const drows=dates.interactive.action.sections[0].rows;
+ assert.equal(drows[0].id,'rsd:990000052:2026-09-17');assert.equal(drows[0].title,'17/09/2026');
+ const times=rescheduleTimeList(990000052,[{time:'11:00'},{time:'12:20'}],'Rodrigo Villagran Morales','Antofagasta Mall Arauco Express');
+ assert.equal(times.interactive.action.button,'Ver horas');
+ const trows=times.interactive.action.sections[0].rows;
+ assert.equal(trows[0].id,'rst:990000052:1100');assert.equal(trows[0].title,'11:00');
+ assert.equal(trows.at(-1).id,'rst:990000052:other');assert.equal(trows.at(-1).title,'Otra fecha');
 });
