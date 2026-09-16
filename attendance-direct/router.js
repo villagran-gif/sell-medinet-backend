@@ -1,6 +1,7 @@
 import { Router, raw } from 'express';
 import { validSignature, parseWebhook, TRIAL_PHONE, metaConfig } from './meta.js';
 import { ingest, ensure, request, sendReconciledCompletion } from './engine.js';
+import { runTomorrowBatch } from './batch.js';
 import { getPool } from '../chatwoot-webhook/db.js';
 import { requireBearer } from '../confirmations/lib/auth.js';
 import { readAppointment } from '../attendance/clients.js';
@@ -32,6 +33,7 @@ export function operatorRouter() {
     const liveSend=process.env.ATTENDANCE_DIRECT_SEND_ENABLED==='true'&&(directVerified||bridgeVerified);
     return {mode:process.env.ATTENDANCE_DIRECT_MODE==='live'?'live':'test',sendsEnabled:testSend||liveSend,inboundMode:directVerified?'meta_direct':bridgeVerified?'chatwoot_bridge':'unverified',items:result.rows.slice(0,500),truncated:result.rows.length>500,attention:attention.rows};
   }));
+  r.post('/batch-tomorrow',route(async req=>runTomorrowBatch({commit:req.body?.commit===true})));
   r.post('/completion',route(async req=>sendReconciledCompletion(req.body?.externalId)));
   r.post('/trial',route(async req=>{
     const date=String(req.body?.date||'');const time=String(req.body?.time||'17:30');
