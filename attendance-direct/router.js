@@ -20,7 +20,8 @@ export function webhookRouter({pool=getPool,env=process.env}={}) {
 export function operatorRouter() {
   const r=Router();r.use(requireBearer);r.use((_req,res,next)=>{res.set('Cache-Control','no-store');next();});
   const route=fn=>async(req,res)=>{try{await ensure();res.json(await fn(req));}catch(e){res.status(409).json({error:e.message});}};
-  r.get('/review',route(async req=>{
+  const readRoute=fn=>async(req,res)=>{try{res.json(await fn(req));}catch(e){res.status(503).json({error:e.message});}};
+  r.get('/review',readRoute(async req=>{
     const date=String(req.query.date||'');if(!/^\d{4}-\d{2}-\d{2}$/.test(date))throw Error('date_required');
     const result=await getPool().query(`SELECT r.id,r.snapshot->>'patient' AS patient,r.snapshot->>'professional' AS professional,r.snapshot->>'branch' AS branch,r.snapshot->>'date' AS date,r.snapshot->>'time' AS time,r.phone,r.trial,r.state,r.delivery,r.reply,r.intent,r.medinet_status,r.verified_at,r.error,r.chatwoot_conversation_id
       FROM attendance_direct.requests r WHERE r.snapshot->>'date'=$1 ORDER BY r.snapshot->>'time',r.id LIMIT 501`,[date]);
