@@ -91,3 +91,21 @@ test('new request reconciles later duplicate pending rows from prior batch resta
   const rows=(await pool.query(`SELECT request_key,state FROM attendance_direct.requests WHERE request_key IN ('dup-old','dup-new') ORDER BY request_key`)).rows;assert.equal(rows.find(r=>r.request_key==='dup-old').state,'confirm');assert.equal(rows.find(r=>r.request_key==='dup-new').state,'external_closed');
  }finally{if(priorMode===undefined)delete process.env.ATTENDANCE_DIRECT_MODE;else process.env.ATTENDANCE_DIRECT_MODE=priorMode;await db.close();}
 });
+
+
+test('Medinet-confirmed appointment remains pending for independent WhatsApp confirmation',async()=>{
+ const db=new PGlite();const pool={query:async(sql,args)=>sql.includes('pg_advisory_')?{rows:[]}:args?db.query(sql,args):sql.includes('CREATE SCHEMA')?(await db.exec(sql),{rows:[]}):db.query(sql),connect:async()=>({...pool,release(){}})};
+ const priorMode=process.env.ATTENDANCE_DIRECT_MODE;process.env.ATTENDANCE_DIRECT_MODE='live';
+ const now=new Date('2026-09-16T12:00:00Z');
+ try{
+  await ensure(pool);
+  const snapshot={id:9876,phone:'56911111111',patient:'Paciente',professional:'Profesional',date:'2026-09-16',time:'16:00',type:'Consulta',branchId:39,branch:'Sede',status:'agendado',fingerprint:'fp-9876'};
+  await pool.query(`INSERT INTO attendance_direct.requests(request_key,snapshot,phone,trial,actor,state,delivery,created_at,expires_at) VALUES('medinet-confirmed',$1,$2,false,'test','pending','accepted',$3,$4)`,[JSON.stringify(snapshot),snapshot.phone,new Date(now.valueOf()-3600000),new Date(now.valueOf()+86400000)]);
+  await pool.query(`CREATE TABLE medinet_daily_snapshots(day date NOT NULL,synced_at timestamptz NOT NULL,appointments jsonb NOT NULL)`);
+  await pool.query(`INSERT INTO medinet_daily_snapshots(day,synced_at,appointments) VALUES($1,$2,$3)`,[snapshot.date,now,JSON.stringify([{id:snapshot.id,estado:{nombre:'Confirmado'}}])]);
+  const rows=await reconcilePendingAgainstSnapshots(pool);
+  assert.equal(rows.length,1);
+  const current=(await pool.query(`SELECT state,medinet_status,verified_at,expires_at FROM attendance_direct.requests WHERE request_key='medinet-confirmed'`)).rows[0];
+  assert.equal(current.state,'pending');assert.equal(current.medinet_status,'Confirmado');assert.ok(current.verified_at);assert.ok(new Date(current.expires_at)>now);
+ }finally{if(priorMode===undefined)delete process.env.ATTENDANCE_DIRECT_MODE;else process.env.ATTENDANCE_DIRECT_MODE=priorMode;await db.close();}
+});
