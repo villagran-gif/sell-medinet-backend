@@ -5,7 +5,6 @@ import { getPool } from '../chatwoot-webhook/db.js';
 import { requireBearer } from '../confirmations/lib/auth.js';
 import { readAppointment } from '../attendance/clients.js';
 import { eligible, future } from '../attendance/policy.js';
-import { backfillChatwootContexts } from './chatwoot-bridge.js';
 export function webhookRouter({pool=getPool,env=process.env}={}) {
   const r=Router();
   r.get('/',(req,res)=>{
@@ -23,13 +22,7 @@ export function operatorRouter() {
   const route=fn=>async(req,res)=>{try{await ensure();res.json(await fn(req));}catch(e){res.status(409).json({error:e.message});}};
   r.get('/review',route(async req=>{
     const date=String(req.query.date||'');if(!/^\d{4}-\d{2}-\d{2}$/.test(date))throw Error('date_required');
-    await backfillChatwootContexts({date}).catch(e=>console.error('[attendance-direct/chatwoot-backfill-review]',e.message));
-    const result=await getPool().query(`SELECT r.id,r.snapshot->>'patient' AS patient,r.snapshot->>'professional' AS professional,r.snapshot->>'branch' AS branch,r.snapshot->>'date' AS date,r.snapshot->>'time' AS time,r.phone,r.trial,r.state,r.delivery,r.reply,r.intent,r.medinet_status,r.verified_at,r.error,r.chatwoot_conversation_id,
-      COALESCE(r.chatwoot_conversation_id,(SELECT NULLIF(e.payload->'conversation'->>'id','')::bigint FROM chatwoot.raw_events e
-       WHERE e.event_type='message_created'
-         AND regexp_replace(coalesce(e.payload->'sender'->>'phone_number',''),'\\D','','g')=r.phone
-         AND (e.received_at AT TIME ZONE 'America/Santiago')::date=$1::date
-       ORDER BY e.received_at DESC LIMIT 1)) AS chatwoot_conversation_id
+    const result=await getPool().query(`SELECT r.id,r.snapshot->>'patient' AS patient,r.snapshot->>'professional' AS professional,r.snapshot->>'branch' AS branch,r.snapshot->>'date' AS date,r.snapshot->>'time' AS time,r.phone,r.trial,r.state,r.delivery,r.reply,r.intent,r.medinet_status,r.verified_at,r.error,r.chatwoot_conversation_id
       FROM attendance_direct.requests r WHERE r.snapshot->>'date'=$1 ORDER BY r.snapshot->>'time',r.id LIMIT 501`,[date]);
     const attention=await getPool().query(`SELECT phone,state,payload->>'text' AS reply,created_at FROM attendance_direct.events WHERE state IN ('needs_review','human_paused') AND (created_at AT TIME ZONE 'America/Santiago')::date=$1::date ORDER BY created_at DESC LIMIT 100`,[date]);
     const testSend=process.env.ATTENDANCE_DIRECT_MODE!=='live'&&process.env.ATTENDANCE_DIRECT_TEST_SEND_ENABLED==='true';
