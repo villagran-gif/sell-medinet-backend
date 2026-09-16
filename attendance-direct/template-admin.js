@@ -2,6 +2,7 @@ import { metaConfig } from './meta.js';
 
 export const WABA_ID = '1485224193347148';
 export const CONFIRM_TEMPLATE_V2 = 'cly_confirm_appointment_v2';
+export const CREATED_TEMPLATE_V1 = 'cly_appointment_created_v1';
 
 function graphBase(env=process.env){
   const {version}=metaConfig(env);
@@ -32,15 +33,34 @@ export function confirmTemplateV2Definition(){
   };
 }
 
-export async function ensureConfirmTemplateV2({env=process.env,fetchImpl=fetch}={}){
-  const existing=await getTemplateByName(CONFIRM_TEMPLATE_V2,{env,fetchImpl});
-  if(existing.length) return {created:false,template:existing[0]};
+export function createdTemplateV1Definition(){
+  return {
+    name: CREATED_TEMPLATE_V1,
+    language:'es_CL',
+    category:'UTILITY',
+    components:[
+      {type:'BODY',text:'Hola {{1}} 👋. Tu cita fue agendada correctamente.\n\nTipo: {{2}}\nProfesional: {{3}}\nFecha: {{4}} a las {{5}}\nSede / modalidad: {{6}}\n\nMás adelante te pediremos confirmar tu asistencia.',example:{body_text:[['Rodrigo','Control Post-Operatorio de Cirugía','Rodrigo Villagran Morales','17/09/2026','11:40','Antofagasta Mall Arauco Express']]}}
+    ]
+  };
+}
+
+async function ensureTemplate(name,definition,{env=process.env,fetchImpl=fetch}={}){
+  const existing=await getTemplateByName(name,{env,fetchImpl});
+  if(existing.length)return {created:false,template:existing[0]};
   const {token}=metaConfig(env); if(!token) throw Error('meta_config_missing');
   const r=await fetchImpl(`${graphBase(env)}/${WABA_ID}/message_templates`,{
     method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
-    body:JSON.stringify(confirmTemplateV2Definition()),signal:AbortSignal.timeout(15000)
+    body:JSON.stringify(definition),signal:AbortSignal.timeout(15000)
   });
   const data=await r.json(); if(!r.ok) throw Error(`meta_template_create_${r.status}:${data?.error?.message||'failed'}`);
-  const after=await getTemplateByName(CONFIRM_TEMPLATE_V2,{env,fetchImpl});
+  const after=await getTemplateByName(name,{env,fetchImpl});
   return {created:true,template:after[0]||data};
+}
+
+export function ensureConfirmTemplateV2(options={}){
+  return ensureTemplate(CONFIRM_TEMPLATE_V2,confirmTemplateV2Definition(),options);
+}
+
+export function ensureCreatedTemplateV1(options={}){
+  return ensureTemplate(CREATED_TEMPLATE_V1,createdTemplateV1Definition(),options);
 }
