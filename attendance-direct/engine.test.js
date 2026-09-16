@@ -48,3 +48,8 @@ test('two-hour no-response follow-up is sent once and remains idempotent',async(
   const second=await sendPendingTwoHourFollowups({pool,send,now});assert.equal(second.duplicate,1);assert.equal(sends,1);
  }finally{await db.close();}
 });
+
+test('two-hour follow-up respects Chile quiet hours and waits until morning',async()=>{
+ const db=new PGlite();const pool={query:async(sql,args)=>sql.includes('pg_advisory_')?{rows:[]}:args?db.query(sql,args):sql.includes('CREATE SCHEMA')?(await db.exec(sql),{rows:[]}):db.query(sql),connect:async()=>({...pool,release(){}})};
+ try{await ensure(pool);let sends=0;const night=new Date('2026-09-16T01:30:00Z');const r=await sendPendingTwoHourFollowups({pool,send:async()=>{sends++;return 'wamid.q';},now:night});assert.equal(r.quietHours,true);assert.equal(sends,0);}finally{await db.close();}
+});

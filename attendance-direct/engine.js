@@ -146,6 +146,8 @@ async function sameDaySiblings(pool,r,now) {
 }
 
 export async function sendPendingTwoHourFollowups({pool=getPool(),send=sendMeta,now=new Date()}={}) {
+  const chileHour=Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/Santiago',hour:'2-digit',hour12:false}).format(now));
+  if(chileHour<7 || chileHour>=21)return {eligible:0,sent:0,duplicate:0,failed:0,quietHours:true};
   await reconcilePendingAgainstSnapshots(pool);
   return lock(pool,async db=>{
     const {rows}=await db.query(`SELECT * FROM attendance_direct.requests
