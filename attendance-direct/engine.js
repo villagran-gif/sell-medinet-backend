@@ -38,7 +38,16 @@ export async function request(a,{trial=false,replaceTrial=false,key,actor,pool=g
     if(trial&&replaceTrial){
       await db.query(`UPDATE attendance_direct.requests SET expires_at=$2 WHERE phone=$1 AND trial=true AND expires_at>$2`,[a.phone,now]);
       await db.query(`INSERT INTO attendance_direct.control(phone,paused,reason) VALUES($1,false,'trial_replaced') ON CONFLICT(phone) DO UPDATE SET paused=false,reason='trial_replaced',updated_at=now()`,[a.phone]);
-    }else if((await db.query('SELECT paused FROM attendance_direct.control WHERE phone=$1',[a.phone])).rows[0]?.paused)throw Error('human_paused');
+    }else {
+      const control=(await db.query('SELECT paused,reason FROM attendance_direct.control WHERE phone=$1',[a.phone])).rows[0];
+      if(control?.paused){
+        if(control.reason!=='human')throw Error('human_paused');
+        const stale=(await db.query(`SELECT id,snapshot FROM attendance_direct.requests WHERE phone=$1 AND (expires_at>$2 OR state IN ('sending','uncertain','processing'))`,[a.phone,now])).rows;
+        if(stale.some(row=>future(row.snapshot,now)))throw Error('human_paused');
+        await db.query(`UPDATE attendance_direct.requests SET expires_at=$2,state=CASE WHEN state IN ('pending','sending','processing') THEN 'external_closed' ELSE state END,medinet_status=COALESCE(medinet_status,'appointment_passed') WHERE phone=$1 AND (expires_at>$2 OR state IN ('sending','uncertain','processing'))`,[a.phone,now]);
+        await db.query(`UPDATE attendance_direct.control SET paused=false,reason='past_appointment_released',updated_at=now() WHERE phone=$1`,[a.phone]);
+      }
+    }
     if(!trial){const fresh=await read(a.id);if(!eligible(fresh,now)||fresh.fingerprint!==a.fingerprint)throw Error('appointment_changed');}
     // One unresolved request per phone: an unquoted reply must never target the wrong appointment.
     const active=await db.query(`SELECT id FROM attendance_direct.requests WHERE phone=$1 AND (expires_at>$2 OR state IN ('sending','uncertain','processing'))`,[a.phone,now]);

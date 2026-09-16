@@ -58,3 +58,10 @@ test('event parsing validates account and accepts normal replies without a quote
  assert.equal(parseEvent({...p,account:{id:1}}),null);
  assert.equal(parseEvent({...p,private:true}).incoming,false);
 });
+
+test('resource exam appointment without professional uses stable Clinyco identity',()=>{
+ const resource={...raw,id:421495,tipo:'Bio impedanciometria',profesional:{},estado:{nombre:'Confirmado'}};
+ const a=snapshot(resource);
+ assert.equal(a.professional,'Clinyco');assert.equal(a.resourceAppointment,true);assert.equal(eligible(a,now),true);
+ assert.equal(snapshot({...resource,estado:{nombre:'Agendado'}}).fingerprint,a.fingerprint);
+});

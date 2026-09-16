@@ -53,3 +53,20 @@ test('two-hour follow-up respects Chile quiet hours and waits until morning',asy
  const db=new PGlite();const pool={query:async(sql,args)=>sql.includes('pg_advisory_')?{rows:[]}:args?db.query(sql,args):sql.includes('CREATE SCHEMA')?(await db.exec(sql),{rows:[]}):db.query(sql),connect:async()=>({...pool,release(){}})};
  try{await ensure(pool);let sends=0;const night=new Date('2026-09-16T01:30:00Z');const r=await sendPendingTwoHourFollowups({pool,send:async()=>{sends++;return 'wamid.q';},now:night});assert.equal(r.quietHours,true);assert.equal(sends,0);}finally{await db.close();}
 });
+
+test('past appointment human pause is released for a new future confirmation',async()=>{
+ const db=new PGlite();const pool={query:async(sql,args)=>sql.includes('pg_advisory_')?{rows:[]}:args?db.query(sql,args):sql.includes('CREATE SCHEMA')?(await db.exec(sql),{rows:[]}):db.query(sql),connect:async()=>({...pool,release(){}})};
+ const priorMode=process.env.ATTENDANCE_DIRECT_MODE;process.env.ATTENDANCE_DIRECT_MODE='live';
+ const now=new Date('2026-09-16T01:00:00Z'),phone='56937436528';
+ const oldSnap={id:421477,phone,patient:'Hector',professional:'Rodrigo',date:'2026-09-15',time:'16:20',type:'Consulta',branchId:39,branch:'Sede',status:'agendado',fingerprint:'old'};
+ const next={id:421535,phone,patient:'Hector',professional:'Rodrigo',date:'2026-09-16',time:'16:00',type:'Consulta',branchId:39,branch:'Sede',status:'agendado',fingerprint:'next'};
+ try{
+  await ensure(pool);
+  await pool.query(`INSERT INTO attendance_direct.requests(request_key,snapshot,phone,trial,actor,state,delivery,expires_at) VALUES('old-human',$1,$2,false,'test','pending','accepted',$3)`,[JSON.stringify(oldSnap),phone,new Date(now.valueOf()+24*3600000)]);
+  await pool.query(`INSERT INTO attendance_direct.control(phone,paused,reason) VALUES($1,true,'human')`,[phone]);
+  const r=await request(next,{pool,trial:false,key:'future-after-past',actor:'test',now,read:async()=>next,send:async()=> 'wamid.new'});
+  assert.equal(r.state,'pending');
+  const old=(await pool.query(`SELECT state,expires_at FROM attendance_direct.requests WHERE request_key='old-human'`)).rows[0];assert.equal(old.state,'external_closed');assert.ok(new Date(old.expires_at)<=now);
+  const ctl=(await pool.query('SELECT paused,reason FROM attendance_direct.control WHERE phone=$1',[phone])).rows[0];assert.equal(ctl.paused,false);assert.equal(ctl.reason,'past_appointment_released');
+ }finally{if(priorMode===undefined)delete process.env.ATTENDANCE_DIRECT_MODE;else process.env.ATTENDANCE_DIRECT_MODE=priorMode;await db.close();}
+});

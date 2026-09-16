@@ -12,16 +12,19 @@ const mobile = p => {
 export function snapshot(raw) {
   const a = raw?.data || raw;
   const patientIdRaw=Number(a?.paciente?.id), professionalIdRaw=Number(a?.profesional?.id);
+  const type = typeof a?.tipo === 'string' ? a.tipo : '';
+  const professionalName = fullName(a?.profesional);
+  const resourceAppointment = !professionalName && /bio ?imped|manometr|phmet|examen/.test(norm(type));
   const result = { id: Number(a?.id), patientId: Number.isSafeInteger(patientIdRaw)&&patientIdRaw>0?patientIdRaw:null,
     patient: fullName(a?.paciente), phone: mobile(a?.paciente),
     patientRun: String(a?.paciente?.rut || a?.paciente?.run || a?.paciente?.dni || '').trim(), patientEmail: String(a?.paciente?.email || '').trim(),
-    professionalId: Number.isSafeInteger(professionalIdRaw)&&professionalIdRaw>0?professionalIdRaw:null, professional: fullName(a?.profesional),
+    professionalId: Number.isSafeInteger(professionalIdRaw)&&professionalIdRaw>0?professionalIdRaw:null, professional: professionalName || (resourceAppointment?'Clinyco':''),
     professionalRun: String(a?.profesional?.rut || a?.profesional?.run || '').trim(),
     branchId: Number(a?.sucursal?.id), branch: a?.sucursal?.nombre,
     date: String(a?.fecha || '').slice(0,10).replaceAll('/', '-'), time: String(a?.hora || '').slice(0,5),
-    type: typeof a?.tipo === 'string' ? a.tipo : '', status: norm(a?.estado?.nombre) };
+    type, status: norm(a?.estado?.nombre), resourceAppointment };
   const patientKey=result.patientId?`id:${result.patientId}`:result.patientRun?`run:${norm(result.patientRun)}`:`contact:${norm(result.patient)}|${result.phone}`;
-  const professionalKey=result.professionalId?`id:${result.professionalId}`:result.professionalRun?`run:${norm(result.professionalRun)}`:`name:${norm(result.professional)}`;
+  const professionalKey=result.professionalId?`id:${result.professionalId}`:result.professionalRun?`run:${norm(result.professionalRun)}`:result.resourceAppointment?`resource:${norm(result.type)}`:`name:${norm(result.professional)}`;
   if (![result.id,result.branchId].every(x=>Number.isSafeInteger(x)&&x>0)
     || !/^569\d{8}$/.test(result.phone) || !/^\d{4}-\d{2}-\d{2}$/.test(result.date)
     || !/^([01]\d|2[0-3]):[0-5]\d$/.test(result.time) || !result.patient || !result.professional || !patientKey || !professionalKey)
