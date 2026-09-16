@@ -32,8 +32,18 @@ export async function request(a,{trial=false,replaceTrial=false,key,actor,pool=g
   if(trial && a.phone!==TRIAL_PHONE)throw Error('trial_recipient_only');
   if(!trial && process.env.ATTENDANCE_DIRECT_MODE!=='live')throw Error('direct_test_mode');
   return lock(pool,async db=>{
+    await db.query(`WITH ranked AS (
+      SELECT id,row_number() OVER (PARTITION BY snapshot->>'id',snapshot->>'fingerprint',trial ORDER BY created_at,id) rn
+      FROM attendance_direct.requests
+      WHERE trial=false AND snapshot ? 'id' AND snapshot ? 'fingerprint')
+      UPDATE attendance_direct.requests r SET state='external_closed',expires_at=now(),medinet_status=COALESCE(medinet_status,'duplicate_request')
+      FROM ranked d WHERE r.id=d.id AND d.rn>1 AND r.state IN ('pending','sending','processing')`);
     const prior=await db.query('SELECT id,state FROM attendance_direct.requests WHERE request_key=$1',[key]);
     if(prior.rows.length)return {...prior.rows[0],duplicate:true};
+    if(!trial){
+      const same=await db.query(`SELECT id,state FROM attendance_direct.requests WHERE trial=false AND snapshot->>'id'=$1 AND snapshot->>'fingerprint'=$2 ORDER BY created_at,id LIMIT 1`,[String(a.id),String(a.fingerprint||'')]);
+      if(same.rows.length)return {...same.rows[0],duplicate:true};
+    }
     // An explicit replacement trial may clear only the fixed trial phone's prior pause.
     if(trial&&replaceTrial){
       await db.query(`UPDATE attendance_direct.requests SET expires_at=$2 WHERE phone=$1 AND trial=true AND expires_at>$2`,[a.phone,now]);

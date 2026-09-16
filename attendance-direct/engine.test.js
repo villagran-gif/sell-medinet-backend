@@ -70,3 +70,24 @@ test('past appointment human pause is released for a new future confirmation',as
   const ctl=(await pool.query('SELECT paused,reason FROM attendance_direct.control WHERE phone=$1',[phone])).rows[0];assert.equal(ctl.paused,false);assert.equal(ctl.reason,'past_appointment_released');
  }finally{if(priorMode===undefined)delete process.env.ATTENDANCE_DIRECT_MODE;else process.env.ATTENDANCE_DIRECT_MODE=priorMode;await db.close();}
 });
+
+test('same appointment fingerprint is idempotent even when batch key changes',async()=>{
+ const db=new PGlite();const pool={query:async(sql,args)=>sql.includes('pg_advisory_')?{rows:[]}:args?db.query(sql,args):sql.includes('CREATE SCHEMA')?(await db.exec(sql),{rows:[]}):db.query(sql),connect:async()=>({...pool,release(){}})};
+ const priorMode=process.env.ATTENDANCE_DIRECT_MODE;process.env.ATTENDANCE_DIRECT_MODE='live';
+ const now=new Date('2026-09-16T01:00:00Z'),a={id:9001,phone:'56911111111',patient:'Paciente',professional:'Profesional',date:'2026-09-16',time:'15:00',type:'Consulta',branchId:39,branch:'Sede',status:'agendado',fingerprint:'fp-9001'};let sends=0;
+ try{await ensure(pool);const opts={pool,trial:false,actor:'test',now,read:async()=>a,send:async()=>{sends++;return `wamid.${sends}`;}};
+  await request(a,{...opts,key:'batch-key-one'});await pool.query(`UPDATE attendance_direct.requests SET state='confirm',expires_at=$1 WHERE snapshot->>'id'='9001'`,[now]);
+  const again=await request(a,{...opts,key:'batch-key-two'});assert.equal(again.duplicate,true);assert.equal(sends,1);
+ }finally{if(priorMode===undefined)delete process.env.ATTENDANCE_DIRECT_MODE;else process.env.ATTENDANCE_DIRECT_MODE=priorMode;await db.close();}
+});
+
+test('new request reconciles later duplicate pending rows from prior batch restarts',async()=>{
+ const db=new PGlite();const pool={query:async(sql,args)=>sql.includes('pg_advisory_')?{rows:[]}:args?db.query(sql,args):sql.includes('CREATE SCHEMA')?(await db.exec(sql),{rows:[]}):db.query(sql),connect:async()=>({...pool,release(){}})};
+ const priorMode=process.env.ATTENDANCE_DIRECT_MODE;process.env.ATTENDANCE_DIRECT_MODE='live';const now=new Date('2026-09-16T01:00:00Z');
+ const snap={id:8001,phone:'56922222222',patient:'Paciente Uno',professional:'Profesional',date:'2026-09-16',time:'14:00',type:'Consulta',branchId:39,branch:'Sede',status:'agendado',fingerprint:'fp-8001'};
+ const next={id:8002,phone:'56933333333',patient:'Paciente Dos',professional:'Profesional',date:'2026-09-16',time:'16:00',type:'Consulta',branchId:39,branch:'Sede',status:'agendado',fingerprint:'fp-8002'};
+ try{await ensure(pool);await pool.query(`INSERT INTO attendance_direct.requests(request_key,snapshot,phone,trial,actor,state,delivery,created_at,expires_at) VALUES('dup-old',$1,$2,false,'test','confirm','accepted',$3,$4),('dup-new',$1,$2,false,'test','pending','accepted',$5,$6)`,[JSON.stringify(snap),snap.phone,new Date(now.valueOf()-3600000),now,new Date(now.valueOf()-1800000),new Date(now.valueOf()+86400000)]);
+  await request(next,{pool,trial:false,key:'cleanup-trigger',actor:'test',now,read:async()=>next,send:async()=> 'wamid.next'});
+  const rows=(await pool.query(`SELECT request_key,state FROM attendance_direct.requests WHERE request_key IN ('dup-old','dup-new') ORDER BY request_key`)).rows;assert.equal(rows.find(r=>r.request_key==='dup-old').state,'confirm');assert.equal(rows.find(r=>r.request_key==='dup-new').state,'external_closed');
+ }finally{if(priorMode===undefined)delete process.env.ATTENDANCE_DIRECT_MODE;else process.env.ATTENDANCE_DIRECT_MODE=priorMode;await db.close();}
+});
