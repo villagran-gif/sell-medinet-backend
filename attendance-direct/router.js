@@ -6,6 +6,21 @@ import { getPool } from '../chatwoot-webhook/db.js';
 import { requireBearer } from '../confirmations/lib/auth.js';
 import { readAppointment } from '../attendance/clients.js';
 import { eligible, future } from '../attendance/policy.js';
+
+const manualTrialKey=String(process.env.ATTENDANCE_DIRECT_MANUAL_LIVE_TRIAL_KEY||'').trim();
+if(process.env.ATTENDANCE_DIRECT_ENABLED==='true'&&process.env.ATTENDANCE_DIRECT_MODE==='live'&&manualTrialKey){
+  if(!/^[a-zA-Z0-9_-]{8,100}$/.test(manualTrialKey)) console.error('[attendance-direct/manual-live-trial] invalid_key');
+  else setTimeout(async()=>{
+    try{
+      const localDate=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+      const d=new Date(`${localDate}T12:00:00Z`);d.setUTCDate(d.getUTCDate()+1);const date=d.toISOString().slice(0,10);
+      const a={id:990000001,phone:TRIAL_PHONE,patient:'Rodrigo',professionalId:1,professional:'Rodrigo Villagran Morales',branchId:39,branch:'PRUEBA',type:'PRUEBA, sin cita real',date,time:'17:30'};
+      const result=await request(a,{trial:true,replaceTrial:true,key:manualTrialKey,actor:'manual-live-trial'});
+      console.log('[attendance-direct/manual-live-trial]',JSON.stringify(result));
+    }catch(e){console.error('[attendance-direct/manual-live-trial]',e.message);}
+  },5000).unref();
+}
+
 export function webhookRouter({pool=getPool,env=process.env}={}) {
   const r=Router();
   r.get('/',(req,res)=>{
