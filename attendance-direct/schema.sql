@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS attendance_direct.requests (
  message_id text UNIQUE, delivery text NOT NULL DEFAULT 'unknown',
  reply text, intent text, medinet_status text, verified_at timestamptz,
  created_at timestamptz NOT NULL DEFAULT now(), expires_at timestamptz NOT NULL,
- error text, actor text NOT NULL
+ error text, actor text NOT NULL,
+ chatwoot_conversation_id bigint, chatwoot_context_noted_at timestamptz
 );
 CREATE TABLE IF NOT EXISTS attendance_direct.events (
  id text PRIMARY KEY, phone text NOT NULL, payload jsonb NOT NULL,
@@ -19,5 +20,3 @@ CREATE TABLE IF NOT EXISTS attendance_direct.control (
  phone text PRIMARY KEY, paused boolean NOT NULL DEFAULT false, reason text, updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-ALTER TABLE attendance_direct.requests ADD COLUMN IF NOT EXISTS chatwoot_conversation_id bigint;
-ALTER TABLE attendance_direct.requests ADD COLUMN IF NOT EXISTS chatwoot_context_noted_at timestamptz;
