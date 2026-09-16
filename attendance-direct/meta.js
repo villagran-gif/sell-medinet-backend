@@ -15,7 +15,7 @@ export function parseWebhook(body) {
     for(const m of v.messages || []) if(m.id && /^569\d{8}$/.test(m.from)) events.push({
       id:m.id,phone:m.from,kind:'message',at:Number(m.timestamp)*1000,
       text:String(m.text?.body||m.button?.text||m.interactive?.button_reply?.title||m.interactive?.list_reply?.title||'').slice(0,4000),
-      selectionId:String(m.interactive?.list_reply?.id||m.interactive?.button_reply?.id||''),replyTo:m.context?.id||null
+      selectionId:String(m.button?.payload||m.interactive?.list_reply?.id||m.interactive?.button_reply?.id||''),replyTo:m.context?.id||null
     });
     for(const s of v.statuses || []) if(s.id && s.recipient_id) events.push({
       id:`status:${s.id}:${s.status}:${s.timestamp}`,messageId:s.id,phone:s.recipient_id,
@@ -48,9 +48,19 @@ export async function sendMeta(phone, body, {env=process.env, fetchImpl=fetch}={
   if(!r.ok || !data.messages?.[0]?.id) throw Error(`meta_send_unverified_${r.status}`);
   return data.messages[0].id;
 }
-export function template(a,trial) {
+export function template(a,trial,{env=process.env}={}) {
   const values=[trial?'Rodrigo (PRUEBA)':a.patient.split(' ')[0],trial?'PRUEBA, sin cita real':a.type||'consulta',a.professional,a.date.split('-').reverse().join('/'),a.time];
-  return {type:'template',template:{name:'cly_confirm_appointment_v1',language:{code:'es_CL'},components:[{type:'body',parameters:values.map(text=>({type:'text',text}))}]}};
+  const configured=String(env.ATTENDANCE_CONFIRM_TEMPLATE_NAME||'cly_confirm_appointment_v1').trim();
+  const name=['cly_confirm_appointment_v1','cly_confirm_appointment_v2'].includes(configured)?configured:'cly_confirm_appointment_v1';
+  const components=[{type:'body',parameters:values.map(text=>({type:'text',text}))}];
+  if(name==='cly_confirm_appointment_v2'){
+    components.push(
+      {type:'button',sub_type:'quick_reply',index:'0',parameters:[{type:'payload',payload:'ATTENDANCE_CONFIRM'}]},
+      {type:'button',sub_type:'quick_reply',index:'1',parameters:[{type:'payload',payload:'ATTENDANCE_CANCEL'}]},
+      {type:'button',sub_type:'quick_reply',index:'2',parameters:[{type:'payload',payload:'ATTENDANCE_RESCHEDULE'}]}
+    );
+  }
+  return {type:'template',template:{name,language:{code:'es_CL'},components}};
 }
 
 export function rescheduleList(externalId, slots, professional='', branch='') {
