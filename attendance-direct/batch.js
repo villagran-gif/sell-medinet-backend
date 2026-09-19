@@ -28,7 +28,8 @@ export async function runDateBatch({days=0,pool=getPool(),requestFn=request,now=
   const effectiveActor=actor||(days===1?'daily-20h':'same-day-catchup');
   for(const a of items){
     try{
-      const key=`${effectiveActor}-${date.replaceAll('-','')}-${a.id}-${a.fingerprint.slice(0,12)}`;
+      const keyPrefix=days===1?'daily20':'same-day-catchup';
+      const key=`${keyPrefix}-${date.replaceAll('-','')}-${a.id}-${a.fingerprint.slice(0,12)}`;
       const result=await requestFn(a,{trial:false,key,actor:effectiveActor,now});
       if(result?.duplicate)summary.duplicate++;else summary.sent++;
     }catch(error){
