@@ -50,7 +50,7 @@ export async function schedulerTick({now=new Date()}={}){
   const hour=Number(p.hour),minute=Number(p.minute);
   const date=`${p.year}-${p.month}-${p.day}`;
 
-  if(hour===20&&minute<10){
+  if(hour===20){
     const key=`tomorrow:${date}`;
     if(!seen.has(key)){
       seen.add(key);
@@ -61,7 +61,7 @@ export async function schedulerTick({now=new Date()}={}){
     }
   }
 
-  if(hour>=7&&hour<=18&&minute<10){
+  if(hour>=7&&hour<=18){
     const key=`today:${date}:${hour}`;
     if(!seen.has(key)){
       seen.add(key);
