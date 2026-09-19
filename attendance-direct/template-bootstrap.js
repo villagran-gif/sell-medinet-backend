@@ -1,3 +1,4 @@
+import './internal-scheduler.js';
 import { ensureConfirmTemplateV2, CONFIRM_TEMPLATE_V2, ensureCreatedTemplateV1, CREATED_TEMPLATE_V1 } from './template-admin.js';
 import { processCreatedAppointments } from './created.js';
 
