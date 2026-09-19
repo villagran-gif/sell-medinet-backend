@@ -1,5 +1,5 @@
 import './internal-scheduler.js';
-import { ensureConfirmTemplateV2, CONFIRM_TEMPLATE_V2, ensureCreatedTemplateV1, CREATED_TEMPLATE_V1 } from './template-admin.js';
+import { ensureConfirmTemplateV2, CONFIRM_TEMPLATE_V2, ensureCreatedTemplateV1, CREATED_TEMPLATE_V1, ensureRecoveryTemplateV1, RECOVERY_TEMPLATE_V1 } from './template-admin.js';
 import { processCreatedAppointments } from './created.js';
 
 const summarize=(name,created,template)=>{
@@ -31,4 +31,10 @@ if(process.env.APPOINTMENT_CREATED_WHATSAPP_ENABLED==='true'){
   };
   setTimeout(run,10000).unref();
   setInterval(run,5000).unref();
+}
+
+if(process.env.ATTENDANCE_META_ENSURE_RECOVERY_V1==='true'){
+  ensureRecoveryTemplateV1()
+    .then(({created,template})=>console.log('[attendance-direct/meta-recovery-v1]',JSON.stringify(summarize(RECOVERY_TEMPLATE_V1,created,template))))
+    .catch(e=>console.error('[attendance-direct/meta-recovery-v1]',e.message));
 }
