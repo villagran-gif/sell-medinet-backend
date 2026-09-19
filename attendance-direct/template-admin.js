@@ -51,10 +51,7 @@ export function recoveryTemplateV1Definition(){
     language:'es_CL',
     category:'UTILITY',
     components:[
-      {type:'BODY',text:'Hola {{1}}, quedó pendiente {{2}}. Disculpa la demora. Si aún necesitas ayuda, continúa con nuestro equipo aquí.',example:{body_text:[['Luisa','tu solicitud de reagendar una cita']]}},
-      {type:'BUTTONS',buttons:[
-        {type:'URL',text:'CONTINUAR',url:'https://wa.me/56953386191?text=Necesito%20retomar%20una%20solicitud%20pendiente'}
-      ]}
+      {type:'BODY',text:'Hola {{1}}, quedó pendiente {{2}}. Disculpa la demora. Si aún necesitas ayuda, escríbenos aquí: https://wa.me/56953386191',example:{body_text:[['Luisa','tu solicitud de reagendar una cita']]}}
     ]
   };
 }
