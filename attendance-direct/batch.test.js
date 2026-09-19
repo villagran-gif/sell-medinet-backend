@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chileDate, runTomorrowBatch } from './batch.js';
+import { chileDate, runTomorrowBatch, runTodayBatch } from './batch.js';
 
 const raw=(id,status='Agendado',phone='+56 9 1111 1111')=>({
   id,fecha:'2026/09/17',hora:id===2?'10:30':'09:30',tipo:'Evaluación',estado:{nombre:status},
@@ -32,4 +32,16 @@ test('committed batch is idempotency-aware and groups same-phone collisions',asy
 
 test('stale snapshot fails closed before any send',async()=>{
   await assert.rejects(runTomorrowBatch({pool:poolFor([raw(1)],'2026-09-16T11:00:00Z'),now,commit:true}),/tomorrow_snapshot_stale/);
+});
+
+
+test('today catch-up captures same-day active appointments and stays idempotent by request layer',async()=>{
+  const item=raw(3);item.fecha='2026/09/16';item.hora='14:30';
+  const calls=[];
+  const requestFn=async(a,opts)=>{calls.push({a,opts});return {duplicate:false};};
+  const result=await runTodayBatch({pool:poolFor([item]),requestFn,now,commit:true});
+  assert.equal(result.date,'2026-09-16');
+  assert.equal(result.sent,1);
+  assert.equal(calls[0].opts.actor,'same-day-catchup');
+  assert.match(calls[0].opts.key,/^same-day-catchup-20260916-3-/);
 });
