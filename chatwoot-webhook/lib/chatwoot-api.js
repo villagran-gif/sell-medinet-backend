@@ -112,3 +112,15 @@ export async function listInboxes() {
 export async function getContactConversations(contactId) {
   return api(`/contacts/${contactId}/conversations`);
 }
+
+
+export async function postPublicMessage(conversationId, content) {
+  return api(`/conversations/${conversationId}/messages`, {
+    method: "POST",
+    body: JSON.stringify({
+      content,
+      message_type: "outgoing",
+      private: false,
+    }),
+  });
+}

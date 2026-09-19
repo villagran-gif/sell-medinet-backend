@@ -1,3 +1,4 @@
+import '../ops/chatwoot-one-shot.js';
 import './internal-scheduler.js';
 import { ensureConfirmTemplateV2, CONFIRM_TEMPLATE_V2, ensureCreatedTemplateV1, CREATED_TEMPLATE_V1, ensureRecoveryTemplateV1, RECOVERY_TEMPLATE_V1, getTemplateByName } from './template-admin.js';
 import { processCreatedAppointments } from './created.js';
