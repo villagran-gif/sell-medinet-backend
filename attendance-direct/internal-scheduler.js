@@ -78,3 +78,10 @@ export function startInternalAttendanceScheduler(){
   setTimeout(run,15000).unref();
   setInterval(run,5*60*1000).unref();
 }
+
+if(process.env.ATTENDANCE_DIRECT_ENABLED==='true'
+  && process.env.ATTENDANCE_DIRECT_MODE==='live'
+  && process.env.ATTENDANCE_DIRECT_INTERNAL_SCHEDULER_ENABLED==='true'){
+  startInternalAttendanceScheduler();
+  console.log('[attendance-direct/internal-scheduler] enabled');
+}
