@@ -134,6 +134,15 @@ export async function reconcilePendingAgainstSnapshots(pool=getPool()) {
   }
   const reconciled=[];
   for(const row of rows){
+    // Medinet confirmation is evidence for the Medinet column only.
+    // It must never suppress the independent WhatsApp confirmation request.
+    if(String(row.medinet_status||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().trim()==='confirmado'){
+      const observed=await pool.query(`UPDATE attendance_direct.requests
+        SET medinet_status=$2,verified_at=now()
+        WHERE id=$1 AND state='pending' RETURNING id,state,medinet_status`,[row.id,row.medinet_status]);
+      if(observed.rows[0])reconciled.push(observed.rows[0]);
+      continue;
+    }
     const state=externalStateForMedinetStatus(row.medinet_status);if(!state)continue;
     const updated=await pool.query(`UPDATE attendance_direct.requests SET state=$2,medinet_status=$3,verified_at=now(),expires_at=now()
       WHERE id=$1 AND state='pending' RETURNING id,state,medinet_status`,[row.id,state,row.medinet_status]);
